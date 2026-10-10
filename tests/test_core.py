@@ -12,6 +12,8 @@ from pdfpick.core import (
     inspect_pdf,
     parity_state,
     set_parity,
+    split_output_paths,
+    split_selected_pages,
 )
 
 
@@ -83,3 +85,58 @@ def test_export_preserves_explicit_page_order(tmp_path: Path) -> None:
     assert export_selected_pages(source, output, [3, 0, 2]) == 3
     reader = PdfReader(output)
     assert [int(page.mediabox.width) for page in reader.pages] == [500, 200, 400]
+
+
+def test_split_preserves_order_and_pads_names(tmp_path: Path) -> None:
+    source = tmp_path / "source.pdf"
+    make_pdf(source, list(range(200, 212)))
+    order = list(reversed(range(12)))
+    outputs = split_selected_pages(source, tmp_path / "pages.pdf", order)
+    assert [path.name for path in outputs] == [f"pages_{i:02d}.pdf" for i in range(1, 13)]
+    for path, index in zip(outputs, order):
+        reader = PdfReader(path)
+        assert len(reader.pages) == 1
+        assert int(reader.pages[0].mediabox.width) == 200 + index
+    assert split_output_paths(tmp_path / "pages.pdf", 100)[0].name == "pages_001.pdf"
+
+
+def test_split_rejects_source_overwrite_and_existing_outputs(tmp_path: Path) -> None:
+    source = tmp_path / "pages_01.pdf"
+    make_pdf(source, [200, 300])
+    with pytest.raises(ValueError, match="不可覆蓋"):
+        split_selected_pages(source, tmp_path / "pages.pdf", [0], overwrite=True)
+    with pytest.raises(ValueError, match="至少選取"):
+        split_selected_pages(source, tmp_path / "out.pdf", [])
+    with pytest.raises(IndexError):
+        split_selected_pages(source, tmp_path / "out.pdf", [0, 2])
+    existing = tmp_path / "out_02.pdf"
+    existing.write_bytes(b"keep me")
+    with pytest.raises(FileExistsError):
+        split_selected_pages(source, tmp_path / "out.pdf", [1, 0])
+    assert existing.read_bytes() == b"keep me"
+    assert not (tmp_path / "out_01.pdf").exists()
+    outputs = split_selected_pages(source, tmp_path / "out.pdf", [1, 0], overwrite=True)
+    assert [int(PdfReader(path).pages[0].mediabox.width) for path in outputs] == [300, 200]
+
+
+def test_split_generation_failure_leaves_outputs_untouched(tmp_path, monkeypatch) -> None:
+    source = tmp_path / "source.pdf"
+    make_pdf(source, [200, 300])
+    existing = tmp_path / "out_01.pdf"
+    existing.write_bytes(b"keep me")
+    original_write = PdfWriter.write
+    calls = 0
+
+    def fail_second_write(writer, stream):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("disk error")
+        return original_write(writer, stream)
+
+    monkeypatch.setattr(PdfWriter, "write", fail_second_write)
+    with pytest.raises(OSError, match="disk error"):
+        split_selected_pages(source, tmp_path / "out.pdf", [0, 1], overwrite=True)
+    assert existing.read_bytes() == b"keep me"
+    assert not (tmp_path / "out_02.pdf").exists()
+    assert not list(tmp_path.glob(".pdfpick-split-*"))
