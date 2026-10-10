@@ -73,6 +73,7 @@ class ThemeController(QObject):
             QFrame#pageCard QLabel, QFrame#pageCard QCheckBox {{ border: none; }}
             QToolBar {{ background: palette(window); border: none;
                         border-bottom: 1px solid {border}; padding: 4px 8px; spacing: 4px; }}
+            QToolBar::separator {{ background: {border}; width: 1px; margin: 5px 4px; }}
             QToolButton {{ background: transparent; border: 1px solid transparent;
                            border-radius: 4px; padding: 4px; color: palette(button-text); }}
             QToolButton:hover {{ background: {hover}; }}
