@@ -20,6 +20,8 @@ concurrency:
 
 jobs:
   publish:
+    # The existing PyPI Trusted Publisher belongs to the upstream repository.
+    if: github.repository == 'meeinoffice/pdfpick'
     name: Publish release distributions
     runs-on: ubuntu-latest
     environment:

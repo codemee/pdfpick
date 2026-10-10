@@ -6,7 +6,7 @@
 
 PDFPick 是 Windows 優先的 Python 桌面程式，功能是：
 
-1. 開啟單一 PDF。
+1. 以可勾選、拖曳排序及關閉的標籤頁開啟多個 PDF。
 2. 顯示所有頁面的可捲動預覽。
 3. 拖曳縮圖或把手調整頁面排列，手動或依原始頁碼的奇偶選取頁面。
 4. 依畫面排列順序將選取頁面輸出成新 PDF。
@@ -34,7 +34,7 @@ uv run pytest
 
 ```text
 src/pdfpick/
-├── app.py             主視窗、狀態管理、GUI 事件與資料流協調
+├── app.py             主視窗與独立文件元件 DocumentView、標籤、GUI 事件與資料流協調
 ├── core.py            不依賴 GUI 的選取、驗證與 PDF 輸出邏輯
 ├── widgets.py         單一頁面預覽卡片 PageCard
 ├── theme.py           系統深色／淺色模式與控制項樣式
@@ -45,12 +45,13 @@ src/pdfpick/
 
 tests/
 ├── test_core.py       選取規則、PDF 驗證與輸出測試
-└── test_gui.py        GUI 狀態、縮放防抖與預覽整合測試
+├── test_gui.py        GUI 狀態、多檔標籤、跨檔輸出與預覽整合測試
+└── test_renderer.py   各文件要求合併、優先順序與取消測試
 ```
 
 ## 4. 啟動與元件生命週期
 
-公開入口為 `pdfpick.app:main`。
+公開入口為 `pdfpick.entrypoint:main`，一般啟動交由 `pdfpick.app:main`；封裝版渲染服務與 `--self-test` 由 entrypoint 分派。
 
 啟動順序刻意設計如下：
 
@@ -64,44 +65,32 @@ tests/
 
 視窗關閉時，`closeEvent()` 會：
 
-- 增加 `session_id`，讓未完成的舊結果失效。
+- 設定 `_closing`，停止各文件縮放 timer，讓未完成的舊結果失效。
 - 結束預覽子程序。
-- 清除尚未開始的 Qt 工作。
+- 清除尚未開始的 Qt 工作並等待進行中的輸出工作結束。
 - 清理預覽 PNG 暫存目錄。
 
 ## 5. 主視窗與狀態
 
-主畫面在 `MainWindow._build_ui()` 中建立，分為三個區域：
+主畫面在 `MainWindow.__init__()` 中建立，分為三個區域：
 
 - 上方固定工具列：開啟 PDF、輸出選取頁面、固定寬度比例顯示及其右側的比例滑桿。點擊比例回到 100%，完整縮放說明集中於比例 tooltip。放大／縮小 QAction 掛於主視窗，僅提供快捷鍵。檔案操作由 QAction 統一管理啟用狀態與快捷鍵，完整來源路徑顯示於視窗標題列。
-- 單數頁／雙數頁三態核取方塊位於工具列的檔案操作按鈕後方；中央為可捲動、自動換欄的頁面網格。
+- 單數頁／雙數頁三態核取方塊位於工具列的檔案操作按鈕後方；中央為標籤頁與各文件的可捲動頁面網格。
 - 下方狀態列：載入、選取及輸出進度。
 
-主要狀態欄位：
+`MainWindow` 管理共享工具列、`QTabWidget`、固定文件 ID 與輸出工作 ID；`DocumentView` 各自持有來源、頁數、`selected_pages`、`page_order`、`page_cards`、縮放比例、渲染世代與捲動區。切換標籤時同步工具列、標題與奇偶頁三態，不重建文件內容。標籤核取方塊與關閉按鈕綁定文件物件，不以易變的標籤索引保存狀態。
 
-| 欄位 | 意義 |
-| --- | --- |
-| `source_path` | 目前來源 PDF；未載入時為 `None` |
-| `page_count` | 來源頁數 |
-| `selected_pages` | 已選頁面的零起始索引集合 |
-| `page_cards` | 依原始頁碼索引存放的 `PageCard`；背景預覽以此索引更新卡片 |
-| `page_order` | 畫面與輸出的原始頁碼索引順序；拖曳時只改動此清單 |
-| `session_id` | 每次重新載入檔案時遞增，用來淘汰舊載入／輸出結果 |
-| `render_generation` | 每次重新渲染時遞增，用來淘汰舊比例的縮圖 |
-| `_render_pending` | 目前世代尚未收到的縮圖數量 |
-| `_export_running` | 控制輸出期間按鈕狀態 |
-
-`_active_tasks` 必須保留 `QRunnable` 的 Python 參考；工作完成或失敗後才移除，避免 Qt 訊號物件過早被回收。
+`_active_tasks` 保留 `QRunnable` 的 Python 參考，完成或失敗後才移除。背景載入以文件 ID 回傳；輸出完成以 `_export_id` 回傳，不受目前標籤影響。
 
 ## 6. PDF 載入流程
 
-`choose_pdf()` 顯示檔案選擇視窗，選到檔案後呼叫 `load_pdf()`：
+`choose_pdf()` 使用多選對話框，與多檔拖入共用 `load_pdfs()`：
 
-1. 遞增 `session_id` 並清除舊文件狀態。
-2. 以 `LoadPdfTask` 在 `QThreadPool` 中呼叫 `core.inspect_pdf()`。
-3. `inspect_pdf()` 確認檔案存在、可解析、至少一頁且未加密。
-4. 成功後建立每頁的 `PageCard`，啟用奇偶頁控制並要求背景渲染。
-5. 所有回傳結果都先比對 `session_id`；不屬於目前文件的結果直接忽略。
+1. 依輸入順序建立載入中的標籤；同一 resolved 路徑已存在時切換到既有標籤。
+2. 以 `LoadPdfTask` 在共用 `QThreadPool` 中呼叫 `core.inspect_pdf()`。
+3. 成功後由對應 `DocumentView` 建立卡片；首次啟用該標籤才要求預覽，之後保留快取。
+4. 失敗時移除該標籤，保留其他成功文件；同批錯誤在全部載入完成後合併呈現。
+5. 已關閉文件的回傳結果只完成工作清理，不重新建立標籤。
 
 密碼保護 PDF 是刻意不支援的第一版限制，會拋出 `UnsupportedEncryptedPdfError`。
 
@@ -146,9 +135,9 @@ GUI 收到單頁結果後會把 PNG 完整複製成 `QImage`，立即刪除該�
 
 ### 7.2 最新要求優先
 
-後端一次只執行一個渲染要求。若使用者在渲染期間多次拖動滑桿，`RenderService` 只保留最新一筆待處理要求，不累積所有中間比例。
+後端一次只執行一個渲染要求。`RenderService` 使用依文件 ID 索引的待處理佇列，各文件只保留最新一筆要求；目前標籤優先。`cancel_pending()` 在關閉文件時移除尚未開始的要求。
 
-正在執行的舊要求不會強制中斷；它的結果會因 `generation` 不符而被 GUI 忽略。舊要求完成後，後端才處理最新要求。
+世代編號由主視窗全域遞增，透過 `_render_documents` 對應到文件 ID，線上 JSON 格式維持不變。結果交給來源文件，與目前標籤或標籤順序無關；比例過期或文件已關閉的頁面結果直接清理暫存圖片。進行中的原生渲染不強制中斷，避免不安全的 PDFium 操作。
 
 ### 7.3 縮放定義
 
@@ -162,8 +151,8 @@ render_scale = slider_percent / 100 × 96 / 72
 
 滑桿有 250ms 防抖；連續拖動時只會在停止變動後送出渲染要求。若修改比例範圍或 DPI 定義，需同步檢查：
 
-- `MainWindow._preview_scale()`
-- `MainWindow._target_preview_width()`
+- `DocumentView._preview_scale()`
+- `DocumentView._target_preview_width()`
 - `render_worker.render_document()`
 - `test_pdf_loads_and_renders_page_previews`
 
@@ -175,7 +164,7 @@ render_scale = slider_percent / 100 × 96 / 72
 - 顯示縮圖或錯誤狀態的 `QLabel`。
 - 零起始 `page_index`。
 
-圖片到達後，卡片會依縮圖實際寬高調整固定尺寸。`MainWindow._reflow_grid()` 以目前最寬卡片和預覽區可用寬度計算欄數；視窗改變大小或新縮圖到達時都會重新排列，但不重新解析 PDF。
+圖片到達後，卡片會依縮圖實際寬高調整固定尺寸。`DocumentView._reflow_grid()` 以目前最寬卡片和預覽區可用寬度計算欄數；視窗改變大小或新縮圖到達時都會重新排列，但不重新解析 PDF。
 
 `PageGrid` 管理拖曳預覽：開始時固定原始網格位置、暫停 layout 並隱藏來源卡片；`QDrag` 使用含頁碼的卡片縮圖（最大 180×240px）。滑鼠以原始格位的左／右半部決定前／後插入，避免移動中的卡片反覆改變命中位置。其餘卡片使用 180ms OutCubic 位置動畫讓出虛線空位，跨列時依網格順序換列。預覽不修改 `page_order`；放開才透過 `_insert_page()` 提交，取消則恢復原始網格。拖曳結束後重新啟用 layout 並重排，輸出期間禁止開始拖曳。
 
@@ -195,20 +184,22 @@ render_scale = slider_percent / 100 × 96 / 72
 
 `choose_output()` 使用系統另存新檔視窗，預設名稱為 `<來源檔名>_selected.pdf`。輸出按鈕只在至少選一頁且沒有輸出工作時啟用。
 
-`core.export_selected_pages()` 的重要行為：
+`core.export_documents()` 的重要行為（既有 `export_selected_pages()` 保留為單檔包裝）：
 
-1. GUI 依 `page_order` 過濾 `selected_pages` 並傳入有序索引；核心保留清單順序，集合輸入仍依來源順序排序。
-2. 禁止目的地與來源為同一檔案。
+1. GUI 依標籤順序取得有勾選的文件；若沒有勾選標籤則只取目前文件。各文件依 `page_order` 過濾 `selected_pages`，組成不可變 `DocumentSelection(source, pages)` 清單。空選頁的文件不提供輸出頁面。
+2. 禁止目的地與參與輸出或任何已開啟的來源為同一檔案。
 3. 驗證頁碼範圍與來源是否仍存在。
 4. 使用 pypdf 直接加入原始頁面，不以縮圖重建 PDF。
-5. 複製可用的文件 metadata。
+5. 複製第一個實際提供頁面的文件 metadata。
 6. 先在目的資料夾寫入 `.pdfpick-*.pdf` 暫存檔。
 7. 寫入完成並 `fsync()` 後，以 `os.replace()` 原子替換目的檔。
 8. 發生錯誤時刪除暫存檔，不留下半成品。
 
 拖曳排序只移動 `page_order` 的原始頁碼索引，`page_cards` 和 `selected_pages` 仍以原始頁碼識別頁面。單雙數選取完全不受畫面位置影響。
 
-單頁拆分由 `choose_split_output()` 共用另存流程，透過 `ExportPdfTask(split=True)` 呼叫 `core.split_selected_pages()`。`split_output_paths()` 依輸出總數產生至少兩位補零的連續序號。GUI 在啟動前確認實際單頁檔案的覆蓋，核心再次禁止覆蓋來源。來源只讀取一次，各頁保留原始頁面與 metadata；先在同一目的資料夾的暫存目錄產生所有 PDF，再逐檔原子發布。未授權覆蓋時，發布操作拒絕已存在的檔案。產生失敗不會修改輸出；若發布階段因磁碟錯誤中斷，錯誤訊息會顯示已完成的檔案數，先前發布的檔案會保留。
+單頁拆分由 `choose_split_output()` 共用另存流程，透過 `ExportPdfTask(split=True)` 呼叫 `core.split_documents()`（`split_selected_pages()` 保留為單檔包裝）。`split_output_paths()` 依輸出總數產生至少兩位補零的連續序號。GUI 在啟動前確認實際單頁檔案的覆蓋，核心再次禁止覆蓋來源。每個來源只讀取一次，各頁保留其所屬來源的原始頁面與 metadata；先在同一目的資料夾的暫存目錄產生所有 PDF，再逐檔原子發布。未授權覆蓋時，發布操作拒絕已存在的檔案。產生失敗不會修改輸出；若發布階段因磁碟錯誤中斷，錯誤訊息會顯示已完成的檔案數，先前發布的檔案會保留。
+
+輸出期間允許切換標籤查看與縮放，但禁止開檔、關閉、標籤勾選／排序與頁面選取／重排。背景輸出使用開始時的不可變快照；全部選頁為空時停用輸出按鈕，不自動回退到其他檔案。拆分序號跨檔連續，沿用至少兩位補零。
 
 ## 11. 主題、字型與圖示
 
@@ -251,19 +242,19 @@ render_scale = slider_percent / 100 × 96 / 72
 
 | 修改需求 | 主要入口 | 注意事項 |
 | --- | --- | --- |
-| 調整主畫面排列 | `MainWindow._build_ui()` | 保持上、中、下三區結構 |
+| 調整主畫面排列 | `MainWindow.__init__()` | 保持上、中、下三區結構 |
 | 調整縮放範圍或 DPI | `app.py` 的 slider 與 scale 方法 | 同步更新測試與 README |
 | 改縮圖格式或品質 | `render_worker.render_document()` | 主程序目前假設收到可由 `QImage` 讀取的路徑 |
 | 改背景任務排程 | `renderer.RenderService` | 保留 generation 淘汰機制 |
 | 新增選取方式 | `core.py` 純函式及 `_selection_updated()` | 以零起始索引為內部標準 |
-| 改輸出順序 | `MainWindow.page_order`、`_move_page()`、`core.export_selected_pages()` | 保持原始頁碼索引與畫面位置分離 |
+| 改輸出順序 | `DocumentView.page_order`、`_move_page()`、`core.export_selected_pages()` | 保持原始頁碼索引與畫面位置分離 |
 | 支援加密 PDF | `core.inspect_pdf()` 與輸出流程 | 需設計密碼輸入及密碼生命週期 |
 | 更換圖示 | `assets/` 與 `load_app_icon()` | PNG 與 ICO 應同步更新 |
 | 調整深淺色配色 | `ThemeController.apply()` | 必須同時確認兩種系統模式 |
 
 ## 14. 已知限制與擴充方向
 
-- 一次只能載入一個來源 PDF。
+- 不支援跨標籤拖移頁面或重啟後還原工作階段。
 - 不支援密碼保護 PDF。
 - 不支援旋轉、裁切或多 PDF 合併。
 - 所有已渲染縮圖都保留在記憶體；極大量頁數或 200% 比例可能有較高記憶體用量。若要改善，優先考慮可視區域延遲渲染與縮圖快取淘汰。

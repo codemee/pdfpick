@@ -18,7 +18,7 @@ def main(report_path: str) -> int:
         from pypdf import PdfReader, PdfWriter
         from pdfpick import __version__
         from pdfpick.app import load_app_icon
-        from pdfpick.core import export_selected_pages
+        from pdfpick.core import DocumentSelection, export_selected_pages, export_documents, split_documents
         from pdfpick.renderer import start_render_backend
         app = QApplication([])
         if load_app_icon().isNull():
@@ -54,6 +54,19 @@ def main(report_path: str) -> int:
             export_selected_pages(source, output, [1, 0])
             if [int(page.mediabox.width) for page in PdfReader(output).pages] != [300, 200]:
                 raise RuntimeError("Reordered export failed")
+            second = root / "second.pdf"
+            writer = PdfWriter()
+            writer.add_blank_page(width=400, height=500)
+            with second.open("wb") as stream:
+                writer.write(stream)
+            selections = [DocumentSelection(second, (0,)), DocumentSelection(source, (1, 0))]
+            merged = root / "multi.pdf"
+            export_documents(selections, merged)
+            if [int(page.mediabox.width) for page in PdfReader(merged).pages] != [400, 300, 200]:
+                raise RuntimeError("Multi-document export failed")
+            single_pages = split_documents(selections, root / "single.pdf")
+            if [int(PdfReader(path).pages[0].mediabox.width) for path in single_pages] != [400, 300, 200]:
+                raise RuntimeError("Multi-document split failed")
         report.write_text(json.dumps({"ok": True, "version": __version__}), encoding="utf-8")
         return 0
     except Exception:

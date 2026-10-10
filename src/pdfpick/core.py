@@ -34,6 +34,40 @@ class PdfInfo:
     page_count: int
 
 
+@dataclass(frozen=True)
+class DocumentSelection:
+    source: Path
+    pages: tuple[int, ...]
+
+
+def _prepare_documents(documents: Iterable[DocumentSelection]):
+    prepared = []
+    readers = {}
+    for document in documents:
+        if not document.pages:
+            continue
+        source = Path(document.source).resolve()
+        if source not in readers:
+            if not source.is_file():
+                raise FileNotFoundError(f"找不到來源 PDF 檔案：{source}")
+            readers[source] = PdfReader(source)
+        reader = readers[source]
+        if reader.is_encrypted:
+            raise UnsupportedEncryptedPdfError(f"目前不支援密碼保護的 PDF：{source}")
+        if any(page < 0 or page >= len(reader.pages) for page in document.pages):
+            raise IndexError(f"選取的頁碼超出來源 PDF 範圍：{source}")
+        prepared.append((source, reader, document.pages))
+    if not prepared:
+        raise ValueError("請至少選取一頁。")
+    return prepared
+
+
+def _copy_metadata(reader: PdfReader, writer: PdfWriter) -> None:
+    if reader.metadata:
+        writer.add_metadata({str(key): str(value) for key, value in reader.metadata.items()
+                             if key and value is not None})
+
+
 def indices_for_parity(page_count: int, odd: bool) -> set[int]:
     """Return zero-based indices for human-facing odd or even page numbers."""
     start = 0 if odd else 1
@@ -77,32 +111,31 @@ def split_selected_pages(
     source: str | Path, destination: str | Path, selected: Iterable[int], *,
     overwrite: bool = False,
 ) -> list[Path]:
-    source_path = Path(source).resolve()
     ordered = sorted(selected) if isinstance(selected, (set, frozenset)) else list(dict.fromkeys(selected))
-    if not ordered:
-        raise ValueError("請至少選取一頁。")
-    outputs = split_output_paths(Path(destination).resolve(), len(ordered))
-    if source_path in outputs:
+    return split_documents([DocumentSelection(Path(source), tuple(ordered))], destination,
+                           overwrite=overwrite)
+
+
+def split_documents(
+    documents: Iterable[DocumentSelection], destination: str | Path, *,
+    overwrite: bool = False, protected_sources: Iterable[Path] = (),
+) -> list[Path]:
+    prepared = _prepare_documents(documents)
+    outputs = split_output_paths(Path(destination).resolve(), sum(len(pages) for _, _, pages in prepared))
+    protected = {source for source, _, _ in prepared} | {Path(path).resolve() for path in protected_sources}
+    if protected.intersection(outputs):
         raise ValueError("輸出檔案不可覆蓋來源 PDF。")
     if not overwrite and any(path.exists() for path in outputs):
         raise FileExistsError("部分單頁檔案已存在，請確認覆蓋或更換檔名。")
-    if not source_path.is_file():
-        raise FileNotFoundError("找不到來源 PDF 檔案。")
-    reader = PdfReader(source_path)
-    if reader.is_encrypted:
-        raise UnsupportedEncryptedPdfError("目前不支援密碼保護的 PDF。")
-    if any(page < 0 or page >= len(reader.pages) for page in ordered):
-        raise IndexError("選取的頁碼超出來源 PDF 範圍。")
     outputs[0].parent.mkdir(parents=True, exist_ok=True)
     # Finish generating every page before publishing any output file.
     with tempfile.TemporaryDirectory(prefix=".pdfpick-split-", dir=outputs[0].parent) as staging:
         staged = []
-        for page, output in zip(ordered, outputs):
+        ordered = [(reader, page) for _, reader, pages in prepared for page in pages]
+        for (reader, page), output in zip(ordered, outputs):
             writer = PdfWriter()
             writer.add_page(reader.pages[page])
-            if reader.metadata:
-                writer.add_metadata({str(key): str(value) for key, value in reader.metadata.items()
-                                     if key and value is not None})
+            _copy_metadata(reader, writer)
             pending = Path(staging) / output.name
             with pending.open("wb") as stream:
                 writer.write(stream)
@@ -147,40 +180,31 @@ def inspect_pdf(source: str | Path) -> PdfInfo:
 def export_selected_pages(
     source: str | Path, destination: str | Path, selected: Iterable[int]
 ) -> int:
-    source_path = Path(source).resolve()
-    destination_path = Path(destination).resolve()
     ordered = (
         sorted(selected) if isinstance(selected, (set, frozenset))
         else list(dict.fromkeys(selected))
     )
-    if not ordered:
-        raise ValueError("請至少選取一頁。")
-    if source_path == destination_path:
+    return export_documents([DocumentSelection(Path(source), tuple(ordered))], destination)
+
+
+def export_documents(
+    documents: Iterable[DocumentSelection], destination: str | Path, *,
+    protected_sources: Iterable[Path] = (),
+) -> int:
+    prepared = _prepare_documents(documents)
+    destination_path = Path(destination).resolve()
+    protected = {source for source, _, _ in prepared} | {Path(path).resolve() for path in protected_sources}
+    if destination_path in protected:
         raise ValueError("輸出檔案不可覆蓋來源 PDF。")
-    if not source_path.is_file():
-        raise FileNotFoundError("找不到來源 PDF 檔案。")
 
     destination_path.parent.mkdir(parents=True, exist_ok=True)
     temp_path: Path | None = None
     try:
-        reader = PdfReader(source_path)
-        if reader.is_encrypted:
-            raise UnsupportedEncryptedPdfError("目前不支援密碼保護的 PDF。")
-        page_count = len(reader.pages)
-        if any(page < 0 or page >= page_count for page in ordered):
-            raise IndexError("選取的頁碼超出來源 PDF 範圍。")
-
         writer = PdfWriter()
-        for page_index in ordered:
-            writer.add_page(reader.pages[page_index])
-        if reader.metadata:
-            metadata = {
-                str(key): str(value)
-                for key, value in reader.metadata.items()
-                if key and value is not None
-            }
-            if metadata:
-                writer.add_metadata(metadata)
+        for _, reader, pages in prepared:
+            for page_index in pages:
+                writer.add_page(reader.pages[page_index])
+        _copy_metadata(prepared[0][1], writer)
 
         with tempfile.NamedTemporaryFile(
             mode="wb", suffix=".pdf", prefix=".pdfpick-", dir=destination_path.parent,
@@ -192,7 +216,7 @@ def export_selected_pages(
             os.fsync(stream.fileno())
         os.replace(temp_path, destination_path)
         temp_path = None
-        return len(ordered)
+        return sum(len(pages) for _, _, pages in prepared)
     finally:
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)

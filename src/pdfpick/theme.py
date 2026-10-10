@@ -74,6 +74,12 @@ class ThemeController(QObject):
             QToolBar {{ background: palette(window); border: none;
                         border-bottom: 1px solid {border}; padding: 4px 8px; spacing: 4px; }}
             QToolBar::separator {{ background: {border}; width: 1px; margin: 5px 4px; }}
+            QTabWidget::pane {{ border: none; }}
+            QTabBar::tab {{ background: transparent; color: palette(window-text);
+                            border: none; border-bottom: 2px solid transparent;
+                            padding: 5px 8px; margin-right: 2px; }}
+            QTabBar::tab:selected {{ background: {card}; border-bottom-color: {slider_fill}; }}
+            QTabBar::tab:!selected:hover {{ background: {hover}; }}
             QToolButton {{ background: transparent; border: 1px solid transparent;
                            border-radius: 4px; padding: 4px; color: palette(button-text); }}
             QToolButton:hover {{ background: {hover}; }}

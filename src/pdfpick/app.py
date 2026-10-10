@@ -31,6 +31,9 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSlider,
     QToolBar,
+    QTabWidget,
+    QTabBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -41,6 +44,7 @@ from pdfpick.core import (
     parity_state,
     set_parity,
     split_output_paths,
+    DocumentSelection,
 )
 from pdfpick import __version__
 from pdfpick.icons import toolbar_icon
@@ -50,58 +54,37 @@ from pdfpick.widgets import PageCard, PageGrid
 from pdfpick.workers import ExportPdfTask, LoadPdfTask
 
 
-class MainWindow(QMainWindow):
+class DocumentView(QWidget):
     REFERENCE_PAGE_WIDTH_POINTS = 595
     SCREEN_DPI = 96
     PDF_DPI = 72
 
-    def __init__(self, render_backend=None) -> None:
+    def __init__(self, owner, document_id: int, path: Path) -> None:
         super().__init__()
-        self._update_window_title()
-        self.setWindowIcon(load_app_icon())
-        self.resize(1040, 760)
-        self.setMinimumSize(720, 520)
-        self.setAcceptDrops(True)
-
-        self.thread_pool = QThreadPool(self)
-        self.thread_pool.setMaxThreadCount(4)
-        self.preview_temp = tempfile.TemporaryDirectory(prefix="pdfpick-preview-")
-        backend = render_backend if render_backend is not None else start_render_backend()
-        self.render_service = RenderService(backend, self)
-        self.render_service.message.connect(self._handle_render_message)
-        self._render_received: set[int] = set()
-        self.source_path: Path | None = None
+        self.owner = owner
+        self.document_id = document_id
+        self.source_path = path.resolve()
         self.page_count = 0
-        self.selected_pages: set[int] = set()
-        self.page_order: list[int] = []
-        self.page_cards: list[PageCard] = []
-        self.session_id = 0
-        self.render_generation = 0
-        self._syncing_bulk = False
-        self._export_running = False
-        self._active_tasks: set[object] = set()
+        self.selected_pages = set()
+        self.page_order = []
+        self.page_cards = []
+        self.zoom = 100
+        self.ready = False
+        self.render_generation = -1
+        self._render_received = set()
         self._render_pending = 0
         self._render_done_generation = -1
-
-        self._build_ui()
-        self.render_timer = QTimer(self)
-        self.render_timer.setSingleShot(True)
-        self.render_timer.setInterval(250)
-        self.render_timer.timeout.connect(self._queue_all_renders)
-
-    def _build_ui(self) -> None:
-        central = QWidget()
-        root = QVBoxLayout(central)
-        root.setContentsMargins(16, 16, 16, 14)
-        root.setSpacing(12)
-
-        self._build_toolbar()
-
-        middle = QWidget()
-        middle_layout = QVBoxLayout(middle)
-        middle_layout.setContentsMargins(0, 0, 0, 0)
-        middle_layout.setSpacing(8)
-
+        self.include_checkbox = QCheckBox()
+        self.include_checkbox.setToolTip("勾選此檔案以加入重組或拆分；未勾選任何標籤時僅輸出目前檔案")
+        self.include_checkbox.setEnabled(False)
+        self.include_checkbox.toggled.connect(owner._sync_controls)
+        self.close_button = QToolButton()
+        self.close_button.setText("×")
+        self.close_button.setToolTip("關閉此檔案")
+        self.close_button.setFixedSize(22, 22)
+        self.close_button.clicked.connect(lambda: owner.close_tab(owner.tabs.indexOf(self)))
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.viewport().installEventFilter(self)
@@ -112,13 +95,250 @@ class MainWindow(QMainWindow):
         self.grid.setContentsMargins(12, 12, 12, 12)
         self.grid.setSpacing(12)
         self.grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self.empty_label = QLabel("請先選取 PDF 檔案，或將 PDF 拖曳到視窗")
+        self.empty_label = QLabel("正在讀取 PDF…")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.grid.addWidget(self.empty_label, 0, 0)
         self.scroll_area.setWidget(self.grid_host)
-        middle_layout.addWidget(self.scroll_area, 1)
-        root.addWidget(middle, 1)
+        root.addWidget(self.scroll_area)
+        self.render_timer = QTimer(self)
+        self.render_timer.setSingleShot(True)
+        self.render_timer.setInterval(250)
+        self.render_timer.timeout.connect(self._queue_all_renders)
 
+    def loaded(self, page_count: int) -> None:
+        self.page_count = page_count
+        self.ready = True
+        self.empty_label.hide()
+        self.grid.removeWidget(self.empty_label)
+        self._create_page_cards()
+        for card in self.page_cards:
+            card.checkbox.setEnabled(not self.owner._export_running)
+        self.include_checkbox.setEnabled(not self.owner._export_running)
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self.scroll_area.viewport() and event.type() == QEvent.Type.Resize:
+            QTimer.singleShot(0, self._reflow_grid)
+        return super().eventFilter(watched, event)
+
+    def show_status(self, message: str) -> None:
+        if self.owner.current_document() is self and not self.owner._export_running:
+            self.owner.statusBar().showMessage(message)
+
+    def _create_page_cards(self) -> None:
+        self.page_order = list(range(self.page_count))
+        width = self._target_preview_width()
+        for page_index in range(self.page_count):
+            card = PageCard(page_index, width)
+            card.selection_changed.connect(self._page_selection_changed)
+            card.reorder_requested.connect(self._move_page)
+            self.page_cards.append(card)
+        self._reflow_grid()
+
+    def _target_preview_width(self) -> int:
+        return max(
+            55,
+            round(self.REFERENCE_PAGE_WIDTH_POINTS * self._preview_scale()),
+        )
+
+    def _preview_scale(self) -> float:
+        return self.zoom / 100 * self.SCREEN_DPI / self.PDF_DPI
+
+    def _reflow_grid(self) -> None:
+        if self.grid_host.drag_source is not None:
+            return
+        if not self.page_cards:
+            return
+        while self.grid.count():
+            self.grid.takeAt(0)
+        card_width = max(card.width() for card in self.page_cards)
+        available = max(1, self.scroll_area.viewport().width() - 24)
+        columns = max(1, (available + self.grid.spacing()) // (card_width + self.grid.spacing()))
+        for position, page_index in enumerate(self.page_order):
+            card = self.page_cards[page_index]
+            self.grid.addWidget(card, position // columns, position % columns)
+        self.grid.activate()
+
+    @Slot(int, int)
+    def _insert_page(self, source_index: int, insertion: int) -> None:
+        if self.owner._export_running or source_index not in self.page_order:
+            return
+        self.page_order.remove(source_index)
+        self.page_order.insert(insertion, source_index)
+        self._reflow_grid()
+        self.show_status(
+            f"已調整第 {source_index + 1} 頁的預覽與輸出順序"
+        )
+
+    @Slot(int, int)
+    def _move_page(self, source_index: int, target_index: int) -> None:
+        if self.owner._export_running or source_index == target_index:
+            return
+        if source_index not in self.page_order or target_index not in self.page_order:
+            return
+        source_position = self.page_order.index(source_index)
+        target_position = self.page_order.index(target_index)
+        self.page_order.pop(source_position)
+        insertion = self.page_order.index(target_index)
+        if source_position < target_position:
+            insertion += 1
+        self.page_order.insert(insertion, source_index)
+        self._reflow_grid()
+        self.show_status(
+            f"已調整第 {source_index + 1} 頁的預覽與輸出順序"
+        )
+
+    @Slot(int, bool)
+    def _page_selection_changed(self, page_index: int, selected: bool) -> None:
+        if selected:
+            self.selected_pages.add(page_index)
+        else:
+            self.selected_pages.discard(page_index)
+        self._selection_updated()
+
+    def _toggle_parity(self, odd: bool, checked: bool) -> None:
+        if self.owner._syncing_bulk:
+            return
+        self.selected_pages = set_parity(
+            self.selected_pages, self.page_count, odd, checked
+        )
+        for card in self.page_cards:
+            card.set_selected(card.page_index in self.selected_pages)
+        self._selection_updated()
+
+    def _selection_updated(self) -> None:
+        self.owner._sync_controls()
+
+    def set_zoom(self, value: int) -> None:
+        if self.zoom == value:
+            return
+        self.zoom = value
+        if self.page_cards:
+            self.render_timer.start()
+
+    @Slot()
+    def _queue_all_renders(self) -> None:
+        if not self.ready or self.owner._closing:
+            return
+        self.owner._next_generation += 1
+        for generation, document_id in list(self.owner._render_documents.items()):
+            if document_id == self.document_id:
+                self.owner._render_documents.pop(generation)
+        self.render_generation = self.owner._next_generation
+        self.owner._render_documents[self.render_generation] = self.document_id
+        generation = self.render_generation
+        self.render_timer.stop()
+        self._render_pending = self.page_count
+        self._render_done_generation = -1
+        self._render_received.clear()
+        width = self._target_preview_width()
+        for card in self.page_cards:
+            card.set_target_width(width)
+        self._reflow_grid()
+        self.show_status("正在產生頁面預覽…")
+        self._reset_render_state()
+        self.owner.render_service.request(
+            self.source_path,
+            self._preview_scale(),
+            Path(self.owner.preview_temp.name),
+            generation,
+            document_id=self.document_id,
+        )
+
+    @Slot(object)
+    def _handle_render_message(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            return
+        kind = payload.get("type")
+        try:
+            generation = int(payload.get("generation", -1))
+        except (TypeError, ValueError):
+            return
+        if generation != self.render_generation:
+            return
+        if kind == "page":
+            self._accept_render_page(payload)
+        elif kind == "done":
+            self._render_done_generation = generation
+            self.show_status(
+                f"已載入 {self.page_count} 頁；已選取 {len(self.selected_pages)} 頁"
+            )
+        elif kind == "error":
+            for page_index, card in enumerate(self.page_cards):
+                if page_index not in self._render_received:
+                    card.set_render_error()
+            self.show_status("部分頁面無法產生預覽")
+            QMessageBox.warning(
+                self.owner, "預覽失敗", f"無法完成頁面預覽：\n{payload.get('message', '')}"
+            )
+
+    def _accept_render_page(self, payload: dict[str, object]) -> None:
+        try:
+            page_index = int(payload["page"])
+            image_path = Path(payload["path"])
+        except (KeyError, TypeError, ValueError):
+            return
+        image = QImage(str(image_path)).copy()
+        if 0 <= page_index < len(self.page_cards) and not image.isNull():
+            self.page_cards[page_index].set_image(image)
+            self._reflow_grid()
+        elif 0 <= page_index < len(self.page_cards):
+            self.page_cards[page_index].set_render_error()
+        image_path.unlink(missing_ok=True)
+        if page_index not in self._render_received:
+            self._render_received.add(page_index)
+            self._render_pending -= 1
+        if self._render_pending == 0:
+            self.show_status(
+                f"已載入 {self.page_count} 頁；已選取 {len(self.selected_pages)} 頁"
+            )
+
+    def _reset_render_state(self) -> None:
+        self._render_received.clear()
+
+
+
+class MainWindow(QMainWindow):
+    def __init__(self, render_backend=None) -> None:
+        super().__init__()
+        self._update_window_title()
+        self.setWindowIcon(load_app_icon())
+        self.resize(1040, 760)
+        self.setMinimumSize(720, 520)
+        self.setAcceptDrops(True)
+        self.thread_pool = QThreadPool(self)
+        self.thread_pool.setMaxThreadCount(4)
+        self.preview_temp = tempfile.TemporaryDirectory(prefix="pdfpick-preview-")
+        self.render_service = RenderService(render_backend if render_backend is not None else start_render_backend(), self)
+        self.render_service.message.connect(self._handle_render_message, Qt.ConnectionType.QueuedConnection)
+        self.documents = {}
+        self._next_document_id = 0
+        self._next_generation = 0
+        self._render_documents = {}
+        self._active_tasks = set()
+        self._load_batches = {}
+        self._document_batches = {}
+        self._next_batch = 0
+        self._export_running = False
+        self._export_id = 0
+        self._syncing_bulk = False
+        self._closing = False
+        self._build_toolbar()
+        central = QWidget()
+        root = QVBoxLayout(central)
+        root.setContentsMargins(12, 10, 12, 12)
+        self.empty_label = QLabel("請先開啟 PDF 檔案，或將多個 PDF 拖曳到視窗")
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        root.addWidget(self.empty_label)
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.tabs.setMovable(True)
+        self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
+        self.tabs.tabBar().setExpanding(False)
+        self.tabs.tabBar().setDrawBase(False)
+        self.tabs.currentChanged.connect(self._tab_changed)
+        self.tabs.tabBar().tabMoved.connect(self._sync_controls)
+        self.tabs.hide()
+        root.addWidget(self.tabs)
         self.setCentralWidget(central)
         self.statusBar().setSizeGripEnabled(False)
         self.statusBar().showMessage("就緒")
@@ -224,308 +444,229 @@ class MainWindow(QMainWindow):
     def _adjust_zoom(self, delta: int) -> None:
         self.zoom_slider.setValue(self.zoom_slider.value() + delta)
 
-    def eventFilter(self, watched: object, event: QEvent) -> bool:
-        if watched is self.scroll_area.viewport() and event.type() == QEvent.Type.Resize:
-            QTimer.singleShot(0, self._reflow_grid)
-        return super().eventFilter(watched, event)
+    def current_document(self):
+        return self.tabs.currentWidget() if hasattr(self, "tabs") else None
 
-    def _dropped_pdf(self, event: QDragEnterEvent | QDragMoveEvent | QDropEvent) -> Path | None:
-        if not self.open_action.isEnabled():
-            return None
+    def ordered_documents(self):
+        return [self.tabs.widget(i) for i in range(self.tabs.count())]
+
+    def output_selection(self) -> list[DocumentSelection]:
+        documents = self.ordered_documents()
+        included = [doc for doc in documents if doc.include_checkbox.isChecked()]
+        if not included:
+            current = self.current_document()
+            included = [current] if current is not None else []
+        return [DocumentSelection(doc.source_path, tuple(page for page in doc.page_order if page in doc.selected_pages))
+                for doc in included if doc.ready and doc.selected_pages]
+
+    def _tab_changed(self, _index: int) -> None:
+        if self._closing:
+            return
+        doc = self.current_document()
+        self._update_window_title(doc.source_path if doc is not None else None)
+        if doc is not None:
+            self.zoom_slider.blockSignals(True)
+            self.zoom_slider.setValue(doc.zoom)
+            self.zoom_slider.blockSignals(False)
+            self.render_service.prioritize(doc.document_id)
+            if doc.ready and (doc.render_generation < 0 or doc.render_timer.isActive()):
+                doc._queue_all_renders()
+            doc._reflow_grid()
+        self._sync_controls()
+
+    def _sync_controls(self, *_args) -> None:
+        if not hasattr(self, "tabs") or self._closing:
+            return
+        doc = self.current_document()
+        ready = doc is not None and doc.ready
+        self._syncing_bulk = True
+        for checkbox, odd in ((self.odd_checkbox, True), (self.even_checkbox, False)):
+            checkbox.blockSignals(True)
+            state = parity_state(doc.selected_pages, doc.page_count, odd) if ready else SelectionState.NONE
+            checkbox.setCheckState({SelectionState.NONE: Qt.CheckState.Unchecked,
+                                    SelectionState.PARTIAL: Qt.CheckState.PartiallyChecked,
+                                    SelectionState.ALL: Qt.CheckState.Checked}[state])
+            checkbox.setEnabled(ready and not self._export_running and (odd or doc.page_count >= 2))
+            checkbox.blockSignals(False)
+        self._syncing_bulk = False
+        self.zoom_reset_action.setText(f"{self.zoom_slider.value()}%")
+        self.zoom_out_action.setEnabled(self.zoom_slider.value() > 25)
+        self.zoom_in_action.setEnabled(self.zoom_slider.value() < 200)
+        enabled = bool(self.output_selection()) and not self._export_running
+        self.export_action.setEnabled(enabled)
+        self.split_action.setEnabled(enabled)
+        if not self._export_running:
+            count = sum(len(item.pages) for item in self.output_selection())
+            self.statusBar().showMessage(
+                f"目前檔案：已選取 {len(doc.selected_pages)} / {doc.page_count} 頁；輸出合計 {count} 頁"
+                if ready else ("正在讀取 PDF…" if doc is not None else "就緒"))
+
+    def _toggle_parity(self, odd: bool, checked: bool) -> None:
+        doc = self.current_document()
+        if doc is not None and doc.ready and not self._export_running:
+            doc._toggle_parity(odd, checked)
+
+    def _zoom_changed(self, value: int) -> None:
+        doc = self.current_document()
+        if doc is not None:
+            doc.set_zoom(value)
+        self._sync_controls()
+
+    def _dropped_pdfs(self, event) -> list[Path]:
+        if self._export_running:
+            return []
         urls = event.mimeData().urls()
-        if len(urls) != 1 or not urls[0].isLocalFile():
-            return None
-        path = Path(urls[0].toLocalFile())
-        return path if path.suffix.lower() == ".pdf" and path.is_file() else None
+        if not urls or any(not url.isLocalFile() for url in urls):
+            return []
+        paths = [Path(url.toLocalFile()) for url in urls]
+        return paths if all(path.suffix.lower() == ".pdf" and path.is_file() for path in paths) else []
 
-    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
-        if self._dropped_pdf(event) is not None:
+    def dragEnterEvent(self, event) -> None:
+        if self._dropped_pdfs(event):
             event.acceptProposedAction()
         else:
             event.ignore()
 
-    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
-        if self._dropped_pdf(event) is not None:
-            event.acceptProposedAction()
-        else:
-            event.ignore()
+    def dragMoveEvent(self, event) -> None:
+        self.dragEnterEvent(event)
 
-    def dropEvent(self, event: QDropEvent) -> None:
-        path = self._dropped_pdf(event)
-        if path is None:
+    def dropEvent(self, event) -> None:
+        paths = self._dropped_pdfs(event)
+        if not paths:
             event.ignore()
             return
         event.acceptProposedAction()
-        self.load_pdf(path)
+        self.load_pdfs(paths)
 
     @Slot()
     def choose_pdf(self) -> None:
-        filename, _ = QFileDialog.getOpenFileName(
-            self, "選取 PDF", str(Path.home()), "PDF 檔案 (*.pdf)"
-        )
-        if filename:
-            self.load_pdf(Path(filename))
+        filenames, _ = QFileDialog.getOpenFileNames(self, "開啟 PDF", str(Path.home()), "PDF 檔案 (*.pdf)")
+        if filenames:
+            self.load_pdfs([Path(filename) for filename in filenames])
+
+    def _new_document(self, path: Path):
+        self._next_document_id += 1
+        doc = DocumentView(self, self._next_document_id, path)
+        self.documents[doc.document_id] = doc
+        self.empty_label.hide()
+        self.tabs.show()
+        index = self.tabs.addTab(doc, path.stem)
+        self.tabs.setTabToolTip(index, str(doc.source_path))
+        self.tabs.tabBar().setTabButton(index, QTabBar.ButtonPosition.LeftSide, doc.include_checkbox)
+        self.tabs.tabBar().setTabButton(index, QTabBar.ButtonPosition.RightSide, doc.close_button)
+        self.tabs.setCurrentIndex(index)
+        return doc
 
     def load_pdf(self, path: Path) -> None:
-        self.session_id += 1
-        session = self.session_id
-        self._reset_document()
-        self._update_window_title(path)
-        self.open_action.setEnabled(False)
-        self.statusBar().showMessage("正在讀取 PDF…")
-        task = LoadPdfTask(path, session)
-        self._keep_task(task)
-        task.signals.loaded.connect(self._pdf_loaded)
-        task.signals.failed.connect(self._pdf_load_failed)
-        task.signals.loaded.connect(lambda *_args, job=task: self._release_task(job))
-        task.signals.failed.connect(lambda *_args, job=task: self._release_task(job))
-        self.thread_pool.start(task)
+        self.load_pdfs([path])
 
-    def _keep_task(self, task: object) -> None:
-        self._active_tasks.add(task)
+    def load_pdfs(self, paths: list[Path]) -> None:
+        if self._export_running:
+            return
+        self._next_batch += 1
+        batch = self._next_batch
+        self._load_batches[batch] = {"pending": set(), "errors": []}
+        for path in paths:
+            path = Path(path).resolve()
+            existing = next((doc for doc in self.documents.values() if doc.source_path == path), None)
+            if existing is not None:
+                self.tabs.setCurrentWidget(existing)
+                continue
+            doc = self._new_document(path)
+            self._document_batches[doc.document_id] = batch
+            self._load_batches[batch]["pending"].add(doc.document_id)
+            task = LoadPdfTask(path, doc.document_id)
+            self._active_tasks.add(task)
+            task.signals.loaded.connect(self._pdf_loaded)
+            task.signals.failed.connect(self._pdf_load_failed)
+            task.signals.loaded.connect(lambda *_args, job=task: self._active_tasks.discard(job))
+            task.signals.failed.connect(lambda *_args, job=task: self._active_tasks.discard(job))
+            self.thread_pool.start(task)
+        if not self._load_batches[batch]["pending"]:
+            self._load_batches.pop(batch)
 
-    def _release_task(self, task: object) -> None:
-        self._active_tasks.discard(task)
+    def _finish_load(self, document_id: int, error: str | None = None) -> None:
+        batch = self._document_batches.pop(document_id, None)
+        if batch is None:
+            return
+        state = self._load_batches[batch]
+        state["pending"].discard(document_id)
+        if error:
+            state["errors"].append(error)
+        if not state["pending"]:
+            self._load_batches.pop(batch)
+            if state["errors"] and not self._closing:
+                QMessageBox.critical(self, "部分 PDF 無法開啟", "\n\n".join(state["errors"]))
 
     @Slot(int, object, int)
-    def _pdf_loaded(self, session: int, path: Path, page_count: int) -> None:
-        if session != self.session_id:
-            return
-        self.source_path = Path(path)
-        self._update_window_title(self.source_path)
-        self.page_count = page_count
-        self.open_action.setEnabled(True)
-        self.empty_label.hide()
-        self._create_page_cards()
-        self.odd_checkbox.setEnabled(True)
-        self.even_checkbox.setEnabled(page_count >= 2)
-        self._sync_bulk_checks()
-        self.statusBar().showMessage(f"已載入 {page_count} 頁")
-        self._queue_all_renders()
+    def _pdf_loaded(self, document_id: int, path: Path, page_count: int) -> None:
+        doc = self.documents.get(document_id)
+        if doc is not None and not self._closing:
+            doc.loaded(page_count)
+            if self.current_document() is doc:
+                self._tab_changed(self.tabs.currentIndex())
+            self._sync_controls()
+        self._finish_load(document_id)
 
     @Slot(int, str)
-    def _pdf_load_failed(self, session: int, message: str) -> None:
-        if session != self.session_id:
+    def _pdf_load_failed(self, document_id: int, message: str) -> None:
+        doc = self.documents.get(document_id)
+        error = f"{doc.source_path}\n{message}" if doc is not None else None
+        if doc is not None:
+            self.close_tab(self.tabs.indexOf(doc), force=True)
+        self._finish_load(document_id, error)
+
+    def close_tab(self, index: int, *, force: bool = False) -> None:
+        if (self._export_running and not force) or index < 0:
             return
-        self.open_action.setEnabled(True)
-        self._update_window_title()
-        self.statusBar().showMessage("讀取失敗")
-        QMessageBox.critical(self, "無法開啟 PDF", message)
-
-    def _reset_document(self) -> None:
-        self.grid_host.finish_drag()
-        self.render_generation += 1
-        self._render_pending = 0
-        self._reset_render_state()
-        self.source_path = None
-        self.page_count = 0
-        self.selected_pages.clear()
-        self.page_order.clear()
-        self.page_cards.clear()
-        while (item := self.grid.takeAt(0)) is not None:
-            widget = item.widget()
-            if widget is not None and widget is not self.empty_label:
-                widget.deleteLater()
-        self.grid.addWidget(self.empty_label, 0, 0)
-        self.empty_label.show()
-        self.odd_checkbox.setEnabled(False)
-        self.even_checkbox.setEnabled(False)
-        self._sync_bulk_checks()
-        self.export_action.setEnabled(False)
-        self.split_action.setEnabled(False)
-
-    def _create_page_cards(self) -> None:
-        self.page_order = list(range(self.page_count))
-        width = self._target_preview_width()
-        for page_index in range(self.page_count):
-            card = PageCard(page_index, width)
-            card.selection_changed.connect(self._page_selection_changed)
-            card.reorder_requested.connect(self._move_page)
-            self.page_cards.append(card)
-        self._reflow_grid()
-
-    def _target_preview_width(self) -> int:
-        return max(
-            55,
-            round(self.REFERENCE_PAGE_WIDTH_POINTS * self._preview_scale()),
-        )
-
-    def _preview_scale(self) -> float:
-        return self.zoom_slider.value() / 100 * self.SCREEN_DPI / self.PDF_DPI
-
-    def _reflow_grid(self) -> None:
-        if self.grid_host.drag_source is not None:
+        doc = self.tabs.widget(index)
+        if doc is None:
             return
-        if not self.page_cards:
-            return
-        while self.grid.count():
-            self.grid.takeAt(0)
-        card_width = max(card.width() for card in self.page_cards)
-        available = max(1, self.scroll_area.viewport().width() - 24)
-        columns = max(1, (available + self.grid.spacing()) // (card_width + self.grid.spacing()))
-        for position, page_index in enumerate(self.page_order):
-            card = self.page_cards[page_index]
-            self.grid.addWidget(card, position // columns, position % columns)
-        self.grid.activate()
-
-    @Slot(int, int)
-    def _insert_page(self, source_index: int, insertion: int) -> None:
-        if self._export_running or source_index not in self.page_order:
-            return
-        self.page_order.remove(source_index)
-        self.page_order.insert(insertion, source_index)
-        self._reflow_grid()
-        self.statusBar().showMessage(
-            f"已調整第 {source_index + 1} 頁的預覽與輸出順序"
-        )
-
-    @Slot(int, int)
-    def _move_page(self, source_index: int, target_index: int) -> None:
-        if self._export_running or source_index == target_index:
-            return
-        if source_index not in self.page_order or target_index not in self.page_order:
-            return
-        source_position = self.page_order.index(source_index)
-        target_position = self.page_order.index(target_index)
-        self.page_order.pop(source_position)
-        insertion = self.page_order.index(target_index)
-        if source_position < target_position:
-            insertion += 1
-        self.page_order.insert(insertion, source_index)
-        self._reflow_grid()
-        self.statusBar().showMessage(
-            f"已調整第 {source_index + 1} 頁的預覽與輸出順序"
-        )
-
-    @Slot(int, bool)
-    def _page_selection_changed(self, page_index: int, selected: bool) -> None:
-        if selected:
-            self.selected_pages.add(page_index)
-        else:
-            self.selected_pages.discard(page_index)
-        self._selection_updated()
-
-    def _toggle_parity(self, odd: bool, checked: bool) -> None:
-        if self._syncing_bulk:
-            return
-        self.selected_pages = set_parity(
-            self.selected_pages, self.page_count, odd, checked
-        )
-        for card in self.page_cards:
-            card.set_selected(card.page_index in self.selected_pages)
-        self._selection_updated()
-
-    def _selection_updated(self) -> None:
-        self._sync_bulk_checks()
-        self.export_action.setEnabled(bool(self.selected_pages) and not self._export_running)
-        self.split_action.setEnabled(bool(self.selected_pages) and not self._export_running)
-        self.statusBar().showMessage(
-            f"已選取 {len(self.selected_pages)} / {self.page_count} 頁"
-        )
-
-    def _sync_bulk_checks(self) -> None:
-        self._syncing_bulk = True
-        try:
-            self._set_bulk_state(self.odd_checkbox, parity_state(
-                self.selected_pages, self.page_count, True
-            ))
-            self._set_bulk_state(self.even_checkbox, parity_state(
-                self.selected_pages, self.page_count, False
-            ))
-        finally:
-            self._syncing_bulk = False
-
-    @staticmethod
-    def _set_bulk_state(checkbox: QCheckBox, state: SelectionState) -> None:
-        mapping = {
-            SelectionState.NONE: Qt.CheckState.Unchecked,
-            SelectionState.PARTIAL: Qt.CheckState.PartiallyChecked,
-            SelectionState.ALL: Qt.CheckState.Checked,
-        }
-        checkbox.blockSignals(True)
-        checkbox.setCheckState(mapping[state])
-        checkbox.blockSignals(False)
-
-    @Slot(int)
-    def _zoom_changed(self, value: int) -> None:
-        self.zoom_reset_action.setText(f"{value}%")
-        self.zoom_out_action.setEnabled(value > self.zoom_slider.minimum())
-        self.zoom_in_action.setEnabled(value < self.zoom_slider.maximum())
-        if self.page_cards:
-            self.render_timer.start()
-
-    @Slot()
-    def _queue_all_renders(self) -> None:
-        if self.source_path is None:
-            return
-        self.render_generation += 1
-        generation = self.render_generation
-        self._render_pending = self.page_count
-        self._render_done_generation = -1
-        self._render_received.clear()
-        width = self._target_preview_width()
-        for card in self.page_cards:
-            card.set_target_width(width)
-        self._reflow_grid()
-        self.statusBar().showMessage("正在產生頁面預覽…")
-        self._reset_render_state()
-        self.render_service.request(
-            self.source_path,
-            self._preview_scale(),
-            Path(self.preview_temp.name),
-            generation,
-        )
+        doc.render_timer.stop()
+        doc.grid_host.finish_drag()
+        self.render_service.cancel_pending(doc.document_id)
+        for generation, document_id in list(self._render_documents.items()):
+            if document_id == doc.document_id:
+                self._render_documents.pop(generation)
+        self.documents.pop(doc.document_id, None)
+        self.tabs.removeTab(index)
+        doc.deleteLater()
+        if not self.tabs.count():
+            self.tabs.hide()
+            self.empty_label.show()
+            self.zoom_slider.blockSignals(True)
+            self.zoom_slider.setValue(100)
+            self.zoom_slider.blockSignals(False)
+        self._sync_controls()
 
     @Slot(object)
-    def _handle_render_message(self, payload: object) -> None:
+    def _handle_render_message(self, payload) -> None:
         if not isinstance(payload, dict):
             return
-        kind = payload.get("type")
         try:
             generation = int(payload.get("generation", -1))
         except (TypeError, ValueError):
             return
-        if generation != self.render_generation:
-            return
-        if kind == "page":
-            self._accept_render_page(payload)
-        elif kind == "done":
-            self._render_done_generation = generation
-            self.statusBar().showMessage(
-                f"已載入 {self.page_count} 頁；已選取 {len(self.selected_pages)} 頁"
-            )
-        elif kind == "error":
-            for page_index, card in enumerate(self.page_cards):
-                if page_index not in self._render_received:
-                    card.set_render_error()
-            self.statusBar().showMessage("部分頁面無法產生預覽")
-            QMessageBox.warning(
-                self, "預覽失敗", f"無法完成頁面預覽：\n{payload.get('message', '')}"
-            )
+        doc = self.documents.get(self._render_documents.get(generation))
+        if doc is not None and doc.render_generation == generation and not self._closing:
+            doc._handle_render_message(payload)
+        elif payload.get("type") == "page":
+            path = Path(str(payload.get("path", "")))
+            if path.parent == Path(self.preview_temp.name) and path.name.startswith(f"g{generation}-p"):
+                path.unlink(missing_ok=True)
+        if payload.get("type") in {"done", "error"}:
+            self._render_documents.pop(generation, None)
 
-    def _accept_render_page(self, payload: dict[str, object]) -> None:
-        try:
-            page_index = int(payload["page"])
-            image_path = Path(payload["path"])
-        except (KeyError, TypeError, ValueError):
-            return
-        image = QImage(str(image_path)).copy()
-        if 0 <= page_index < len(self.page_cards) and not image.isNull():
-            self.page_cards[page_index].set_image(image)
-            self._reflow_grid()
-        elif 0 <= page_index < len(self.page_cards):
-            self.page_cards[page_index].set_render_error()
-        image_path.unlink(missing_ok=True)
-        if page_index not in self._render_received:
-            self._render_received.add(page_index)
-            self._render_pending -= 1
-        if self._render_pending == 0:
-            self.statusBar().showMessage(
-                f"已載入 {self.page_count} 頁；已選取 {len(self.selected_pages)} 頁"
-            )
-
-    def _reset_render_state(self) -> None:
-        self._render_received.clear()
+    def _set_export_running(self, running: bool) -> None:
+        self._export_running = running
+        self.open_action.setEnabled(not running)
+        self.tabs.setMovable(not running)
+        for doc in self.documents.values():
+            doc.include_checkbox.setEnabled(doc.ready and not running)
+            doc.close_button.setEnabled(not running)
+            for card in doc.page_cards:
+                card.checkbox.setEnabled(not running)
+        self._sync_controls()
 
     @Slot()
     def choose_output(self) -> None:
@@ -536,9 +677,10 @@ class MainWindow(QMainWindow):
         self._choose_output(split=True)
 
     def _choose_output(self, *, split: bool) -> None:
-        if self.source_path is None or not self.selected_pages or self._export_running:
+        selections = self.output_selection()
+        if not selections or self._export_running:
             return
-        suggested = default_output_path(self.source_path)
+        suggested = default_output_path(selections[0].source)
         filename, _ = QFileDialog.getSaveFileName(
             self, "拆分選取頁面：指定檔名，將自動附加序號" if split else "輸出選取頁面",
             str(suggested), "PDF 檔案 (*.pdf)", "",
@@ -549,8 +691,8 @@ class MainWindow(QMainWindow):
         destination = Path(filename)
         if destination.suffix.lower() != ".pdf":
             destination = destination.with_suffix(".pdf")
-        outputs = split_output_paths(destination, len(self.selected_pages)) if split else [destination]
-        if self.source_path.resolve() in [path.resolve() for path in outputs]:
+        outputs = split_output_paths(destination, sum(len(item.pages) for item in selections)) if split else [destination]
+        if {doc.source_path for doc in self.documents.values()}.intersection(path.resolve() for path in outputs):
             QMessageBox.warning(self, "無法輸出", "輸出檔案不可覆蓋來源 PDF。")
             return
         overwrite = False
@@ -569,35 +711,32 @@ class MainWindow(QMainWindow):
         self._start_export(destination, split=split, overwrite=overwrite)
 
     def _start_export(self, destination: Path, *, split: bool = False, overwrite: bool = False) -> None:
-        assert self.source_path is not None
-        self._export_running = True
+        selections = self.output_selection()
+        if not selections or self._export_running:
+            return
+        self._export_id += 1
+        self._set_export_running(True)
         self._export_split = split
-        self.export_action.setEnabled(False)
-        self.split_action.setEnabled(False)
-        self.open_action.setEnabled(False)
         self.statusBar().showMessage("正在拆分單頁 PDF…" if split else "正在輸出 PDF…")
         task = ExportPdfTask(
-            self.source_path,
+            selections,
             destination,
-            [page for page in self.page_order if page in self.selected_pages],
-            self.session_id,
+            self._export_id,
             split=split, overwrite=overwrite,
+            protected_sources=tuple(doc.source_path for doc in self.documents.values()),
         )
-        self._keep_task(task)
+        self._active_tasks.add(task)
         task.signals.completed.connect(self._export_completed)
         task.signals.failed.connect(self._export_failed)
-        task.signals.completed.connect(lambda *_args, job=task: self._release_task(job))
-        task.signals.failed.connect(lambda *_args, job=task: self._release_task(job))
+        task.signals.completed.connect(lambda *_args, job=task: self._active_tasks.discard(job))
+        task.signals.failed.connect(lambda *_args, job=task: self._active_tasks.discard(job))
         self.thread_pool.start(task)
 
     @Slot(int, object, int)
     def _export_completed(self, session: int, destination: Path, count: int) -> None:
-        if session != self.session_id:
+        if session != self._export_id or self._closing:
             return
-        self._export_running = False
-        self.open_action.setEnabled(True)
-        self.export_action.setEnabled(bool(self.selected_pages))
-        self.split_action.setEnabled(bool(self.selected_pages))
+        self._set_export_running(False)
         self.statusBar().showMessage(f"輸出完成：{destination}")
         if self._export_split:
             outputs = split_output_paths(destination, count)
@@ -610,19 +749,20 @@ class MainWindow(QMainWindow):
 
     @Slot(int, str)
     def _export_failed(self, session: int, message: str) -> None:
-        if session != self.session_id:
+        if session != self._export_id or self._closing:
             return
-        self._export_running = False
-        self.open_action.setEnabled(True)
-        self.export_action.setEnabled(bool(self.selected_pages))
-        self.split_action.setEnabled(bool(self.selected_pages))
+        self._set_export_running(False)
         self.statusBar().showMessage("輸出失敗")
         QMessageBox.critical(self, "輸出失敗", message)
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        self.session_id += 1
+        self._closing = True
+        for doc in self.documents.values():
+            doc.render_timer.stop()
+            doc.grid_host.finish_drag()
         self.render_service.close()
         self.thread_pool.clear()
+        self.thread_pool.waitForDone()
         self.preview_temp.cleanup()
         event.accept()
 

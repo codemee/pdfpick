@@ -14,6 +14,9 @@ from pdfpick.core import (
     set_parity,
     split_output_paths,
     split_selected_pages,
+    DocumentSelection,
+    export_documents,
+    split_documents,
 )
 
 
@@ -140,3 +143,54 @@ def test_split_generation_failure_leaves_outputs_untouched(tmp_path, monkeypatch
     assert existing.read_bytes() == b"keep me"
     assert not (tmp_path / "out_02.pdf").exists()
     assert not list(tmp_path.glob(".pdfpick-split-*"))
+
+
+def test_multi_document_export_order_and_metadata(tmp_path) -> None:
+    a, b = tmp_path / "a.pdf", tmp_path / "b.pdf"
+    for path, widths, title in ((a, [200, 300], "A"), (b, [400, 500], "B")):
+        writer = PdfWriter()
+        writer.add_metadata({"/Title": title})
+        for width in widths:
+            writer.add_blank_page(width=width, height=600)
+        with path.open("wb") as stream:
+            writer.write(stream)
+    selections = [DocumentSelection(b, (1, 0)), DocumentSelection(a, (1,))]
+    merged = tmp_path / "merged.pdf"
+    assert export_documents(selections, merged) == 3
+    reader = PdfReader(merged)
+    assert [int(page.mediabox.width) for page in reader.pages] == [500, 400, 300]
+    assert reader.metadata.title == "B"
+    outputs = split_documents(selections, tmp_path / "single.pdf")
+    assert [path.name for path in outputs] == ["single_01.pdf", "single_02.pdf", "single_03.pdf"]
+    assert [int(PdfReader(path).pages[0].mediabox.width) for path in outputs] == [500, 400, 300]
+    assert [PdfReader(path).metadata.title for path in outputs] == ["B", "B", "A"]
+
+
+def test_multi_document_validates_all_sources_before_writing(tmp_path) -> None:
+    a, b = tmp_path / "a.pdf", tmp_path / "b.pdf"
+    make_pdf(a, [200])
+    make_pdf(b, [300])
+    selected = [DocumentSelection(a, (0,)), DocumentSelection(b, (2,))]
+    existing = tmp_path / "out.pdf"
+    existing.write_bytes(b"keep")
+    with pytest.raises(IndexError):
+        export_documents(selected, existing)
+    assert existing.read_bytes() == b"keep"
+    with pytest.raises(ValueError, match="不可覆蓋"):
+        export_documents([DocumentSelection(a, (0,))], b, protected_sources=(b,))
+    with pytest.raises(ValueError, match="不可覆蓋"):
+        split_documents([DocumentSelection(a, (0,))], tmp_path / "x.pdf",
+                        protected_sources=(tmp_path / "x_01.pdf",))
+
+
+def test_multi_document_reads_each_source_once(tmp_path, monkeypatch) -> None:
+    import pdfpick.core as core
+    source = tmp_path / "source.pdf"
+    make_pdf(source, [200, 300])
+    calls = []
+    original = core.PdfReader
+    monkeypatch.setattr(core, "PdfReader", lambda path: (calls.append(path), original(path))[1])
+    output = tmp_path / "out.pdf"
+    export_documents([DocumentSelection(source, (1,)), DocumentSelection(source, (0,))], output)
+    assert calls == [source]
+    assert [int(page.mediabox.width) for page in PdfReader(output).pages] == [300, 200]

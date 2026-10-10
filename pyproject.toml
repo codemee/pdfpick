@@ -1,6 +1,6 @@
 [project]
 name = "pdfpick"
-version = "0.0.4"
+version = "0.0.5"
 description = "Select and recombine pages from a PDF with a desktop GUI."
 readme = "README.md"
 requires-python = ">=3.11"

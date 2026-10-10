@@ -6,6 +6,7 @@ import socket
 import subprocess
 import sys
 import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import TextIO
 
@@ -83,13 +84,14 @@ class RenderService(QObject):
         self.process = process
         self._lock = threading.Lock()
         self._busy = False
-        self._pending: dict[str, object] | None = None
+        self._pending: OrderedDict[int, dict[str, object]] = OrderedDict()
         self._closed = False
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
         self._reader.start()
 
     def request(
-        self, source: Path, scale: float, output_dir: Path, generation: int
+        self, source: Path, scale: float, output_dir: Path, generation: int,
+        *, document_id: int = 0,
     ) -> None:
         payload: dict[str, object] = {
             "source": str(source),
@@ -98,22 +100,42 @@ class RenderService(QObject):
             "generation": generation,
         }
         with self._lock:
-            if self._busy:
-                self._pending = payload
+            if self._closed:
                 return
-            self._busy = True
-            self._write(payload)
+            self._pending[document_id] = payload
+            self._pending.move_to_end(document_id, last=False)
+            self._start_next()
 
-    def _write(self, payload: dict[str, object]) -> None:
+    def cancel_pending(self, document_id: int) -> None:
+        with self._lock:
+            self._pending.pop(document_id, None)
+
+    def prioritize(self, document_id: int) -> None:
+        with self._lock:
+            if document_id in self._pending:
+                self._pending.move_to_end(document_id, last=False)
+
+    def _start_next(self) -> None:
+        while self._pending and not self._busy and not self._closed:
+            _, payload = self._pending.popitem(last=False)
+            self._busy = self._write(payload)
+
+    def _write(self, payload: dict[str, object]) -> bool:
         stream = self.process.stdin
         if stream is None or self.process.poll() is not None:
             self.message.emit({
                 "type": "error", "generation": payload["generation"],
                 "message": "PDF 預覽後端已停止。",
             })
-            return
-        stream.write(json.dumps(payload) + "\n")
-        stream.flush()
+            return False
+        try:
+            stream.write(json.dumps(payload) + "\n")
+            stream.flush()
+            return True
+        except (OSError, ValueError) as exc:
+            self.message.emit({"type": "error", "generation": payload["generation"],
+                               "message": str(exc)})
+            return False
 
     def _read_loop(self) -> None:
         stream: TextIO | None = self.process.stdout
@@ -128,16 +150,12 @@ class RenderService(QObject):
             if payload.get("type") in {"done", "error"}:
                 with self._lock:
                     self._busy = False
-                    pending = self._pending
-                    self._pending = None
-                    if pending is not None and not self._closed:
-                        self._busy = True
-                        self._write(pending)
+                    self._start_next()
 
     def close(self) -> None:
         with self._lock:
             self._closed = True
-            self._pending = None
+            self._pending.clear()
         if self.process.poll() is None:
             self.process.terminate()
             try:

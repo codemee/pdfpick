@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, Signal, Slot
 
-from pdfpick.core import export_selected_pages, inspect_pdf, split_selected_pages
+from pdfpick.core import DocumentSelection, export_documents, inspect_pdf, split_documents
 
 
 class LoadSignals(QObject):
@@ -35,26 +35,27 @@ class ExportSignals(QObject):
 
 class ExportPdfTask(QRunnable):
     def __init__(
-        self, source: Path, destination: Path, selected: list[int], session_id: int,
-        *, split: bool = False, overwrite: bool = False,
+        self, documents: list[DocumentSelection], destination: Path, session_id: int,
+        *, split: bool = False, overwrite: bool = False, protected_sources: tuple[Path, ...] = (),
     ) -> None:
         super().__init__()
-        self.source = source
+        self.documents = tuple(DocumentSelection(item.source, tuple(item.pages)) for item in documents)
         self.destination = destination
-        self.selected = list(selected)
         self.session_id = session_id
         self.signals = ExportSignals()
         self.split = split
         self.overwrite = overwrite
+        self.protected_sources = protected_sources
 
     @Slot()
     def run(self) -> None:
         try:
             if self.split:
-                count = len(split_selected_pages(self.source, self.destination, self.selected,
-                                                 overwrite=self.overwrite))
+                count = len(split_documents(self.documents, self.destination,
+                                            overwrite=self.overwrite, protected_sources=self.protected_sources))
             else:
-                count = export_selected_pages(self.source, self.destination, self.selected)
+                count = export_documents(self.documents, self.destination,
+                                         protected_sources=self.protected_sources)
             self.signals.completed.emit(self.session_id, self.destination, count)
         except Exception as exc:
             self.signals.failed.emit(self.session_id, str(exc))
