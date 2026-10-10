@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pdfpick.strings import tr
+
 import json
 import secrets
 import socket
@@ -33,10 +35,10 @@ def start_render_backend() -> subprocess.Popen[str]:
         ready = json.loads(ready_line)
     except json.JSONDecodeError as exc:
         process.terminate()
-        raise RuntimeError("無法啟動 PDF 預覽後端。") from exc
+        raise RuntimeError(tr('無法啟動 PDF 預覽後端。')) from exc
     if ready.get("type") != "ready":
         process.terminate()
-        raise RuntimeError("PDF 預覽後端未正確啟動。")
+        raise RuntimeError(tr('PDF 預覽後端未正確啟動。'))
     return process
 
 
@@ -64,7 +66,7 @@ def _start_frozen_backend() -> subprocess.Popen[str]:
                 process.stdout = connection.makefile("r", encoding="utf-8")
                 ready = json.loads(process.stdout.readline())
                 if ready.get("type") != "ready" or ready.get("token") != token:
-                    raise RuntimeError("PDF 預覽後端驗證失敗。")
+                    raise RuntimeError(tr('PDF 預覽後端驗證失敗。'))
                 connection.settimeout(None)
             return process
         except Exception as exc:
@@ -73,7 +75,7 @@ def _start_frozen_backend() -> subprocess.Popen[str]:
             for stream in (process.stdin, process.stdout):
                 if stream is not None:
                     stream.close()
-            raise RuntimeError("無法啟動封裝版 PDF 預覽後端。") from exc
+            raise RuntimeError(tr('無法啟動封裝版 PDF 預覽後端。')) from exc
 
 
 class RenderService(QObject):
@@ -125,7 +127,7 @@ class RenderService(QObject):
         if stream is None or self.process.poll() is not None:
             self.message.emit({
                 "type": "error", "generation": payload["generation"],
-                "message": "PDF 預覽後端已停止。",
+                "message": tr('PDF 預覽後端已停止。'),
             })
             return False
         try:

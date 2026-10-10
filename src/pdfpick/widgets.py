@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pdfpick.strings import tr
+
 from PySide6.QtCore import QEasingCurve, QMimeData, QPoint, QPropertyAnimation, Qt, Signal
 from PySide6.QtGui import QDrag, QDragEnterEvent, QDragLeaveEvent, QDragMoveEvent, QDropEvent, QImage, QMouseEvent, QPixmap
 from PySide6.QtWidgets import QApplication, QCheckBox, QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
@@ -128,7 +130,7 @@ class DragLabel(QLabel):
         super().__init__(text)
         self._press_position = None
         self.setCursor(Qt.CursorShape.OpenHandCursor)
-        self.setToolTip("拖曳到另一頁可調整順序")
+        self.setToolTip(tr('拖曳到另一頁可調整順序'))
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -165,11 +167,11 @@ class PageCard(QFrame):
         self.setFixedWidth(target_width + 24)
         self.setAcceptDrops(False)
 
-        self.checkbox = QCheckBox(f"第 {page_index + 1} 頁")
+        self.checkbox = QCheckBox(tr('第 {p0} 頁', p0=page_index + 1))
         self.checkbox.clicked.connect(
             lambda checked: self.selection_changed.emit(self.page_index, checked)
         )
-        self.drag_handle = DragLabel("☰ 拖曳排序")
+        self.drag_handle = DragLabel(tr('☰ 拖曳排序'))
         self.drag_handle.drag_requested.connect(self._start_drag)
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
@@ -177,7 +179,7 @@ class PageCard(QFrame):
         header.addStretch()
         header.addWidget(self.drag_handle)
 
-        self.preview = DragLabel("載入中…")
+        self.preview = DragLabel(tr('載入中…'))
         self.preview.drag_requested.connect(self._start_drag)
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setMinimumHeight(max(80, int(target_width * 1.3)))
@@ -258,7 +260,7 @@ class PageCard(QFrame):
         self.setFixedWidth(width + 24)
         self.preview.setFixedWidth(width)
         self.preview.setMinimumHeight(max(80, int(width * 1.3)))
-        self.preview.setText("載入中…")
+        self.preview.setText(tr('載入中…'))
         self.preview.setPixmap(QPixmap())
 
     def set_image(self, image: QImage) -> None:
@@ -271,4 +273,4 @@ class PageCard(QFrame):
 
     def set_render_error(self) -> None:
         self.preview.setMinimumHeight(max(80, int(self.target_width * 1.3)))
-        self.preview.setText("無法產生預覽")
+        self.preview.setText(tr('無法產生預覽'))

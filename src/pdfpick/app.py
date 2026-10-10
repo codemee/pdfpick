@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from pdfpick.strings import tr, localize_text
+
 import sys
 import tempfile
 from importlib.resources import files
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QSize, Qt, QThreadPool, QTimer, Slot
+from PySide6.QtCore import QEvent, QSettings, QSize, Qt, QThreadPool, QTimer, Slot
 from PySide6.QtGui import (
     QCloseEvent,
     QAction,
@@ -21,6 +23,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QAbstractButton,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
@@ -49,6 +52,7 @@ from pdfpick.core import (
 from pdfpick import __version__
 from pdfpick.icons import toolbar_icon
 from pdfpick.theme import ThemeController
+from pdfpick.preferences import LanguageController
 from pdfpick.renderer import RenderService, start_render_backend
 from pdfpick.widgets import PageCard, PageGrid
 from pdfpick.workers import ExportPdfTask, LoadPdfTask
@@ -75,12 +79,12 @@ class DocumentView(QWidget):
         self._render_pending = 0
         self._render_done_generation = -1
         self.include_checkbox = QCheckBox()
-        self.include_checkbox.setToolTip("勾選此檔案以加入重組或拆分；未勾選任何標籤時僅輸出目前檔案")
+        self.include_checkbox.setToolTip(tr('勾選此檔案以加入重組或拆分；未勾選任何標籤時僅輸出目前檔案'))
         self.include_checkbox.setEnabled(False)
         self.include_checkbox.toggled.connect(owner._sync_controls)
         self.close_button = QToolButton()
         self.close_button.setText("×")
-        self.close_button.setToolTip("關閉此檔案")
+        self.close_button.setToolTip(tr('關閉此檔案'))
         self.close_button.setFixedSize(22, 22)
         self.close_button.clicked.connect(lambda: owner.close_tab(owner.tabs.indexOf(self)))
         root = QVBoxLayout(self)
@@ -95,7 +99,7 @@ class DocumentView(QWidget):
         self.grid.setContentsMargins(12, 12, 12, 12)
         self.grid.setSpacing(12)
         self.grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        self.empty_label = QLabel("正在讀取 PDF…")
+        self.empty_label = QLabel(tr('正在讀取 PDF…'))
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.grid.addWidget(self.empty_label, 0, 0)
         self.scroll_area.setWidget(self.grid_host)
@@ -166,7 +170,7 @@ class DocumentView(QWidget):
         self.page_order.insert(insertion, source_index)
         self._reflow_grid()
         self.show_status(
-            f"已調整第 {source_index + 1} 頁的預覽與輸出順序"
+            tr('已調整第 {p0} 頁的預覽與輸出順序', p0=source_index + 1)
         )
 
     @Slot(int, int)
@@ -184,7 +188,7 @@ class DocumentView(QWidget):
         self.page_order.insert(insertion, source_index)
         self._reflow_grid()
         self.show_status(
-            f"已調整第 {source_index + 1} 頁的預覽與輸出順序"
+            tr('已調整第 {p0} 頁的預覽與輸出順序', p0=source_index + 1)
         )
 
     @Slot(int, bool)
@@ -234,7 +238,7 @@ class DocumentView(QWidget):
         for card in self.page_cards:
             card.set_target_width(width)
         self._reflow_grid()
-        self.show_status("正在產生頁面預覽…")
+        self.show_status(tr('正在產生頁面預覽…'))
         self._reset_render_state()
         self.owner.render_service.request(
             self.source_path,
@@ -260,15 +264,15 @@ class DocumentView(QWidget):
         elif kind == "done":
             self._render_done_generation = generation
             self.show_status(
-                f"已載入 {self.page_count} 頁；已選取 {len(self.selected_pages)} 頁"
+                tr('已載入 {p0} 頁；已選取 {p1} 頁', p0=self.page_count, p1=len(self.selected_pages))
             )
         elif kind == "error":
             for page_index, card in enumerate(self.page_cards):
                 if page_index not in self._render_received:
                     card.set_render_error()
-            self.show_status("部分頁面無法產生預覽")
+            self.show_status(tr('部分頁面無法產生預覽'))
             QMessageBox.warning(
-                self.owner, "預覽失敗", f"無法完成頁面預覽：\n{payload.get('message', '')}"
+                self.owner, tr('預覽失敗'), tr('無法完成頁面預覽：\n{p0}', p0=payload.get('message', ''))
             )
 
     def _accept_render_page(self, payload: dict[str, object]) -> None:
@@ -289,7 +293,7 @@ class DocumentView(QWidget):
             self._render_pending -= 1
         if self._render_pending == 0:
             self.show_status(
-                f"已載入 {self.page_count} 頁；已選取 {len(self.selected_pages)} 頁"
+                tr('已載入 {p0} 頁；已選取 {p1} 頁', p0=self.page_count, p1=len(self.selected_pages))
             )
 
     def _reset_render_state(self) -> None:
@@ -300,6 +304,9 @@ class DocumentView(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self, render_backend=None) -> None:
         super().__init__()
+        self.settings = QSettings("PDFPick", "PDFPick")
+        self.language_controller = LanguageController(self.settings.value("ui/language", "system"), self)
+        self._theme_controller = ThemeController(QApplication.instance(), self.settings.value("ui/theme", "system"), self)
         self._update_window_title()
         self.setWindowIcon(load_app_icon())
         self.resize(1040, 760)
@@ -326,7 +333,7 @@ class MainWindow(QMainWindow):
         central = QWidget()
         root = QVBoxLayout(central)
         root.setContentsMargins(12, 10, 12, 12)
-        self.empty_label = QLabel("請先開啟 PDF 檔案，或將多個 PDF 拖曳到視窗")
+        self.empty_label = QLabel(tr('請先開啟 PDF 檔案，或將多個 PDF 拖曳到視窗'))
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root.addWidget(self.empty_label)
         self.tabs = QTabWidget()
@@ -341,10 +348,12 @@ class MainWindow(QMainWindow):
         root.addWidget(self.tabs)
         self.setCentralWidget(central)
         self.statusBar().setSizeGripEnabled(False)
-        self.statusBar().showMessage("就緒")
+        self.statusBar().showMessage(tr('就緒'))
+        self.language_controller.changed.connect(self._retranslate)
+        self._update_preference_actions()
 
     def _build_toolbar(self) -> None:
-        self.toolbar = QToolBar("檔案與顯示", self)
+        self.toolbar = QToolBar(tr('檔案與顯示'), self)
         self.toolbar.setMovable(False)
         self.toolbar.setFloatable(False)
         self.toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
@@ -352,19 +361,19 @@ class MainWindow(QMainWindow):
         self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.addToolBar(self.toolbar)
 
-        self.open_action = QAction("開啟 PDF", self)
+        self.open_action = QAction(tr('開啟 PDF'), self)
         self.open_action.setShortcut(QKeySequence.StandardKey.Open)
-        self.open_action.setToolTip("開啟 PDF（Ctrl+O）")
+        self.open_action.setToolTip(tr('開啟 PDF（Ctrl+O）'))
         self.open_action.triggered.connect(self.choose_pdf)
         self.toolbar.addAction(self.open_action)
-        self.export_action = QAction("輸出選取頁面", self)
+        self.export_action = QAction(tr('輸出選取頁面'), self)
         self.export_action.setShortcuts([QKeySequence("Ctrl+S"), QKeySequence("Ctrl+Shift+S")])
-        self.export_action.setToolTip("輸出選取頁面為新 PDF（Ctrl+S / Ctrl+Shift+S）")
+        self.export_action.setToolTip(tr('輸出選取頁面為新 PDF（Ctrl+S / Ctrl+Shift+S）'))
         self.export_action.setEnabled(False)
         self.export_action.triggered.connect(self.choose_output)
         self.toolbar.addAction(self.export_action)
-        self.split_action = QAction("拆分選取頁面", self)
-        self.split_action.setToolTip("拆分選取頁面：依目前順序存成單頁 PDF，檔名附加補零序號")
+        self.split_action = QAction(tr('拆分選取頁面'), self)
+        self.split_action.setToolTip(tr('拆分選取頁面：依目前順序存成單頁 PDF，檔名附加補零序號'))
         self.split_action.setEnabled(False)
         self.split_action.triggered.connect(self.choose_split_output)
         self.toolbar.addAction(self.split_action)
@@ -374,14 +383,14 @@ class MainWindow(QMainWindow):
         bulk = QHBoxLayout(selection_controls)
         bulk.setContentsMargins(8, 0, 4, 0)
         bulk.setSpacing(8)
-        self.odd_checkbox = QCheckBox("單數頁")
-        self.even_checkbox = QCheckBox("雙數頁")
+        self.odd_checkbox = QCheckBox(tr('單數頁'))
+        self.even_checkbox = QCheckBox(tr('雙數頁'))
         for checkbox in (self.odd_checkbox, self.even_checkbox):
             checkbox.setTristate(True)
             checkbox.setEnabled(False)
             bulk.addWidget(checkbox)
-        self.odd_checkbox.setToolTip("選取或取消原始頁碼的單數頁")
-        self.even_checkbox.setToolTip("選取或取消原始頁碼的雙數頁")
+        self.odd_checkbox.setToolTip(tr('選取或取消原始頁碼的單數頁'))
+        self.even_checkbox.setToolTip(tr('選取或取消原始頁碼的雙數頁'))
         self.odd_checkbox.clicked.connect(lambda checked: self._toggle_parity(True, checked))
         self.even_checkbox.clicked.connect(lambda checked: self._toggle_parity(False, checked))
         self.toolbar.addWidget(selection_controls)
@@ -390,32 +399,27 @@ class MainWindow(QMainWindow):
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.toolbar.addWidget(spacer)
         self.toolbar.addSeparator()
-        self.zoom_out_action = QAction("縮小", self)
+        self.zoom_out_action = QAction(tr('縮小'), self)
         self.zoom_out_action.setShortcut(QKeySequence("Ctrl+-"))
-        self.zoom_out_action.setToolTip("縮小（Ctrl+-）")
+        self.zoom_out_action.setToolTip(tr('縮小（Ctrl+-）'))
         self.zoom_out_action.triggered.connect(lambda: self._adjust_zoom(-25))
         self.addAction(self.zoom_out_action)
         self.zoom_slider = QSlider(Qt.Orientation.Horizontal)
         self.zoom_slider.setRange(25, 200)
         self.zoom_slider.setValue(100)
         self.zoom_slider.setFixedWidth(150)
-        self.zoom_slider.setAccessibleName("頁面顯示比例")
-        self.zoom_slider.setToolTip("100% 以 96 DPI 顯示 PDF 頁面")
+        self.zoom_slider.setAccessibleName(tr('頁面顯示比例'))
+        self.zoom_slider.setToolTip(tr('100% 以 96 DPI 顯示 PDF 頁面'))
         self.zoom_slider.valueChanged.connect(self._zoom_changed)
-        self.zoom_in_action = QAction("放大", self)
+        self.zoom_in_action = QAction(tr('放大'), self)
         self.zoom_in_action.setShortcuts([QKeySequence("Ctrl++"), QKeySequence("Ctrl+=")])
-        self.zoom_in_action.setToolTip("放大（Ctrl++ / Ctrl+=）")
+        self.zoom_in_action.setToolTip(tr('放大（Ctrl++ / Ctrl+=）'))
         self.zoom_in_action.triggered.connect(lambda: self._adjust_zoom(25))
         self.addAction(self.zoom_in_action)
         self.zoom_reset_action = QAction("100%", self)
         self.zoom_reset_action.setShortcut(QKeySequence("Ctrl+0"))
         self.zoom_reset_action.setToolTip(
-            "頁面顯示比例：25%–200%\n"
-            "拖曳右側滑桿調整比例。\n"
-            "放大：Ctrl++ 或 Ctrl+=（每次增加 25 個百分點）\n"
-            "縮小：Ctrl+-（每次減少 25 個百分點）\n"
-            "回到 100%：點擊比例或按 Ctrl+0\n"
-            "100% 以 96 DPI 顯示 PDF 頁面。"
+            tr('頁面顯示比例：25%–200%\n拖曳右側滑桿調整比例。\n放大：Ctrl++ 或 Ctrl+=（每次增加 25 個百分點）\n縮小：Ctrl+-（每次減少 25 個百分點）\n回到 100%：點擊比例或按 Ctrl+0\n100% 以 96 DPI 顯示 PDF 頁面。')
         )
         self.zoom_reset_action.triggered.connect(lambda: self.zoom_slider.setValue(100))
         self.toolbar.addAction(self.zoom_reset_action)
@@ -425,20 +429,78 @@ class MainWindow(QMainWindow):
             Qt.ToolButtonStyle.ToolButtonTextOnly
         )
         self.toolbar.addWidget(self.zoom_slider)
+        self.toolbar.addSeparator()
+        self.language_action = QAction(self)
+        self.language_action.triggered.connect(self._cycle_language)
+        self.toolbar.addAction(self.language_action)
+        self.theme_action = QAction(self)
+        self.theme_action.triggered.connect(self._cycle_theme)
+        self.toolbar.addAction(self.theme_action)
         self._refresh_toolbar_icons()
 
     def _refresh_toolbar_icons(self) -> None:
         for action, kind in ((self.open_action, "open"), (self.export_action, "export"),
                              (self.split_action, "split")):
             action.setIcon(toolbar_icon(kind))
+        if hasattr(self, "language_action"):
+            self._update_preference_actions()
+
+    def _update_preference_actions(self) -> None:
+        language = self.language_controller
+        language_names = {"system": tr("跟隨系統"), "zh": tr("中文"), "en": "English"}
+        theme_names = {"system": tr("跟隨系統"), "light": tr("淺色"), "dark": tr("深色")}
+        self.language_action.setText(tr("介面語言"))
+        self.language_action.setIcon(toolbar_icon("language_" + language.mode))
+        self.language_action.setToolTip(tr("介面語言：{mode}（目前：{language}）\n點擊依序切換：跟隨系統 → 中文 → English",
+                                          mode=language_names[language.mode], language=language_names[language.language]))
+        self.theme_action.setText(tr("介面配色"))
+        self.theme_action.setIcon(toolbar_icon("theme_" + self._theme_controller.mode))
+        self.theme_action.setToolTip(tr("介面配色：{mode}\n點擊依序切換：跟隨系統 → 淺色 → 深色",
+                                      mode=theme_names[self._theme_controller.mode]))
+
+    def _cycle_language(self) -> None:
+        modes = ("system", "zh", "en")
+        mode = modes[(modes.index(self.language_controller.mode) + 1) % 3]
+        self.settings.setValue("ui/language", mode)
+        self.language_controller.set_mode(mode)
+
+    def _cycle_theme(self) -> None:
+        modes = ("system", "light", "dark")
+        mode = modes[(modes.index(self._theme_controller.mode) + 1) % 3]
+        self.settings.setValue("ui/theme", mode)
+        self._theme_controller.set_mode(mode)
+        self._update_preference_actions()
+
+    def _retranslate(self) -> None:
+        status = localize_text(self.statusBar().currentMessage())
+        for widget in self.findChildren(QLabel) + self.findChildren(QAbstractButton) + self.findChildren(QAction):
+            if isinstance(widget, QLabel) and not widget.pixmap().isNull():
+                continue
+            text = localize_text(widget.text())
+            if text != widget.text():
+                widget.setText(text)
+        for widget in self.findChildren(QWidget) + self.findChildren(QAction):
+            widget.setToolTip(localize_text(widget.toolTip()))
+            if isinstance(widget, QWidget):
+                widget.setAccessibleName(localize_text(widget.accessibleName()))
+        self.toolbar.setWindowTitle(localize_text(self.toolbar.windowTitle()))
+        doc = self.current_document()
+        self._update_window_title(doc.source_path if doc is not None else None)
+        self._sync_controls()
+        self.statusBar().showMessage(status)
+        self._update_preference_actions()
+        QApplication.instance().setApplicationDisplayName(tr("PDF 選頁重組工具"))
 
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
         if event.type() == QEvent.Type.PaletteChange and hasattr(self, "zoom_reset_action"):
             self._refresh_toolbar_icons()
+        if event.type() == QEvent.Type.LocaleChange and hasattr(self, "language_controller"):
+            if self.language_controller.mode == "system":
+                self.language_controller.refresh()
 
     def _update_window_title(self, path: Path | None = None) -> None:
-        title = f"PDF 選頁重組工具 {__version__} 版"
+        title = tr('PDF 選頁重組工具 {p0} 版', p0=__version__)
         self.setWindowTitle(f"{path.resolve()} — {title}" if path is not None else title)
 
     def _adjust_zoom(self, delta: int) -> None:
@@ -498,8 +560,8 @@ class MainWindow(QMainWindow):
         if not self._export_running:
             count = sum(len(item.pages) for item in self.output_selection())
             self.statusBar().showMessage(
-                f"目前檔案：已選取 {len(doc.selected_pages)} / {doc.page_count} 頁；輸出合計 {count} 頁"
-                if ready else ("正在讀取 PDF…" if doc is not None else "就緒"))
+                tr('目前檔案：已選取 {p0} / {p1} 頁；輸出合計 {p2} 頁', p0=len(doc.selected_pages), p1=doc.page_count, p2=count)
+                if ready else (tr('正在讀取 PDF…') if doc is not None else tr('就緒')))
 
     def _toggle_parity(self, odd: bool, checked: bool) -> None:
         doc = self.current_document()
@@ -540,7 +602,7 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def choose_pdf(self) -> None:
-        filenames, _ = QFileDialog.getOpenFileNames(self, "開啟 PDF", str(Path.home()), "PDF 檔案 (*.pdf)")
+        filenames, _ = QFileDialog.getOpenFileNames(self, tr('開啟 PDF'), str(Path.home()), tr('PDF 檔案 (*.pdf)'), "", QFileDialog.Option.DontUseNativeDialog)
         if filenames:
             self.load_pdfs([Path(filename) for filename in filenames])
 
@@ -596,7 +658,7 @@ class MainWindow(QMainWindow):
         if not state["pending"]:
             self._load_batches.pop(batch)
             if state["errors"] and not self._closing:
-                QMessageBox.critical(self, "部分 PDF 無法開啟", "\n\n".join(state["errors"]))
+                QMessageBox.critical(self, tr('部分 PDF 無法開啟'), "\n\n".join(state["errors"]))
 
     @Slot(int, object, int)
     def _pdf_loaded(self, document_id: int, path: Path, page_count: int) -> None:
@@ -682,9 +744,9 @@ class MainWindow(QMainWindow):
             return
         suggested = default_output_path(selections[0].source)
         filename, _ = QFileDialog.getSaveFileName(
-            self, "拆分選取頁面：指定檔名，將自動附加序號" if split else "輸出選取頁面",
-            str(suggested), "PDF 檔案 (*.pdf)", "",
-            QFileDialog.Option.DontConfirmOverwrite if split else QFileDialog.Option(0),
+            self, tr('拆分選取頁面：指定檔名，將自動附加序號') if split else tr('輸出選取頁面'),
+            str(suggested), tr('PDF 檔案 (*.pdf)'), "",
+            QFileDialog.Option.DontUseNativeDialog | (QFileDialog.Option.DontConfirmOverwrite if split else QFileDialog.Option(0)),
         )
         if not filename:
             return
@@ -693,15 +755,15 @@ class MainWindow(QMainWindow):
             destination = destination.with_suffix(".pdf")
         outputs = split_output_paths(destination, sum(len(item.pages) for item in selections)) if split else [destination]
         if {doc.source_path for doc in self.documents.values()}.intersection(path.resolve() for path in outputs):
-            QMessageBox.warning(self, "無法輸出", "輸出檔案不可覆蓋來源 PDF。")
+            QMessageBox.warning(self, tr('無法輸出'), tr('輸出檔案不可覆蓋來源 PDF。'))
             return
         overwrite = False
         if split:
             existing = [path for path in outputs if path.exists()]
             if existing:
                 answer = QMessageBox.question(
-                    self, "覆蓋單頁檔案",
-                    f"已有 {len(existing)} 個同名單頁檔案，例如：\n{existing[0]}\n\n是否覆蓋？",
+                    self, tr('覆蓋單頁檔案'),
+                    tr('已有 {p0} 個同名單頁檔案，例如：\n{p1}\n\n是否覆蓋？', p0=len(existing), p1=existing[0]),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.No,
                 )
@@ -717,7 +779,7 @@ class MainWindow(QMainWindow):
         self._export_id += 1
         self._set_export_running(True)
         self._export_split = split
-        self.statusBar().showMessage("正在拆分單頁 PDF…" if split else "正在輸出 PDF…")
+        self.statusBar().showMessage(tr('正在拆分單頁 PDF…') if split else tr('正在輸出 PDF…'))
         task = ExportPdfTask(
             selections,
             destination,
@@ -737,23 +799,23 @@ class MainWindow(QMainWindow):
         if session != self._export_id or self._closing:
             return
         self._set_export_running(False)
-        self.statusBar().showMessage(f"輸出完成：{destination}")
+        self.statusBar().showMessage(tr('輸出完成：{p0}', p0=destination))
         if self._export_split:
             outputs = split_output_paths(destination, count)
-            message = f"已拆分為 {count} 個單頁 PDF：\n{outputs[0]}"
+            message = tr('已拆分為 {p0} 個單頁 PDF：\n{p1}', p0=count, p1=outputs[0])
             if count > 1:
                 message += f"\n…\n{outputs[-1]}"
         else:
-            message = f"已輸出 {count} 頁至：\n{destination}"
-        QMessageBox.information(self, "輸出完成", message)
+            message = tr('已輸出 {p0} 頁至：\n{p1}', p0=count, p1=destination)
+        QMessageBox.information(self, tr('輸出完成'), message)
 
     @Slot(int, str)
     def _export_failed(self, session: int, message: str) -> None:
         if session != self._export_id or self._closing:
             return
         self._set_export_running(False)
-        self.statusBar().showMessage("輸出失敗")
-        QMessageBox.critical(self, "輸出失敗", message)
+        self.statusBar().showMessage(tr('輸出失敗'))
+        QMessageBox.critical(self, tr('輸出失敗'), localize_text(message))
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self._closing = True
@@ -764,6 +826,7 @@ class MainWindow(QMainWindow):
         self.thread_pool.clear()
         self.thread_pool.waitForDone()
         self.preview_temp.cleanup()
+        self.language_controller.close()
         event.accept()
 
 
@@ -772,7 +835,7 @@ def load_app_icon() -> QIcon:
 
 
 def configure_application(app: QApplication) -> None:
-    app.setApplicationName("PDF 選頁重組工具")
+    app.setApplicationName(tr('PDF 選頁重組工具'))
     app.setOrganizationName("PDFPick")
     app.setStyle("Fusion")
     app.setWindowIcon(load_app_icon())
@@ -792,8 +855,6 @@ def main() -> int:
     render_backend = start_render_backend()
     app = QApplication(sys.argv)
     configure_application(app)
-    theme = ThemeController(app)
     window = MainWindow(render_backend)
     window.show()
-    window._theme_controller = theme
     return app.exec()

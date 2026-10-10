@@ -8,18 +8,25 @@ from PySide6.QtWidgets import QApplication
 
 
 class ThemeController(QObject):
-    def __init__(self, app: QApplication) -> None:
-        super().__init__(app)
+    def __init__(self, app: QApplication, mode: str = "system", parent=None) -> None:
+        super().__init__(parent or app)
         self.app = app
+        self.mode = mode if mode in {"system", "light", "dark"} else "system"
         hints = QGuiApplication.styleHints()
         if hasattr(hints, "colorSchemeChanged"):
             hints.colorSchemeChanged.connect(self.apply)
         self.apply()
 
+    def set_mode(self, mode: str) -> None:
+        if mode not in {"system", "light", "dark"}:
+            raise ValueError(mode)
+        self.mode = mode
+        self.apply()
+
     @Slot()
     def apply(self, *_args: object) -> None:
         scheme = QGuiApplication.styleHints().colorScheme()
-        dark = scheme == Qt.ColorScheme.Dark
+        dark = self.mode == "dark" or (self.mode == "system" and scheme == Qt.ColorScheme.Dark)
         palette = QPalette()
         colors = (
             {

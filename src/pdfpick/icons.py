@@ -1,7 +1,7 @@
 """Small, flat toolbar icons drawn at device-independent coordinates."""
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QIcon, QPainter, QPalette, QPen, QPixmap, QPolygonF
+from PySide6.QtGui import QFont, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import QApplication
 
 
@@ -17,7 +17,42 @@ def toolbar_icon(kind: str) -> QIcon:
         painter.setPen(QPen(QApplication.palette().color(group, QPalette.ColorRole.ButtonText),
                             1.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
                             Qt.PenJoinStyle.RoundJoin))
-        if kind == "open":
+        if kind in ("language_zh", "language_en"):
+            font = QFont(QApplication.font())
+            font.setPixelSize(16)
+            painter.setFont(font)
+            painter.drawText(QRectF(1, 1, 22, 22), Qt.AlignmentFlag.AlignCenter,
+                             "中" if kind == "language_zh" else "En")
+        elif kind == "language_system":
+            painter.drawEllipse(QRectF(3, 3, 18, 18))
+            painter.drawEllipse(QRectF(8, 3, 8, 18))
+            painter.drawLine(3, 12, 21, 12)
+        elif kind == "theme_system":
+            moon = QPainterPath(QPointF(8, 2))
+            moon.cubicTo(1, 1, 1, 10, 6, 10)
+            moon.cubicTo(8, 10, 9, 8, 9, 7)
+            moon.cubicTo(4, 8, 4, 4, 8, 2)
+            painter.drawPath(moon)
+            painter.drawLine(19, 2, 5, 22)
+            painter.drawEllipse(QRectF(14, 14, 6, 6))
+            for x1, y1, x2, y2 in ((17, 11, 17, 12), (17, 22, 17, 23),
+                                    (11, 17, 12, 17), (22, 17, 23, 17),
+                                    (12, 12, 13, 13), (21, 21, 22, 22),
+                                    (12, 22, 13, 21), (21, 13, 22, 12)):
+                painter.drawLine(x1, y1, x2, y2)
+        elif kind == "theme_light":
+            painter.drawEllipse(QRectF(7, 7, 10, 10))
+            for x1, y1, x2, y2 in ((12, 2, 12, 4), (12, 20, 12, 22), (2, 12, 4, 12),
+                                    (20, 12, 22, 12), (5, 5, 6, 6), (18, 18, 19, 19),
+                                    (5, 19, 6, 18), (18, 6, 19, 5)):
+                painter.drawLine(x1, y1, x2, y2)
+        elif kind == "theme_dark":
+            path = QPainterPath(QPointF(11, 3))
+            path.cubicTo(1, 4, 1, 19, 12, 21)
+            path.cubicTo(17, 22, 21, 18, 21, 14)
+            path.cubicTo(10, 18, 6, 9, 11, 3)
+            painter.drawPath(path)
+        elif kind == "open":
             painter.drawPolyline(QPolygonF([QPointF(3, 19), QPointF(3, 5), QPointF(9, 5),
                                             QPointF(12, 8), QPointF(20, 8), QPointF(20, 10)]))
             painter.drawPolygon(QPolygonF([QPointF(3, 19), QPointF(7, 11), QPointF(22, 11),

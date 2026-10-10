@@ -1,11 +1,13 @@
 import sys
 import tomllib
+import PySide6
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 root = Path(SPECPATH).parent
 version = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
 data = [(str(root / "src/pdfpick/assets"), "pdfpick/assets")]
+data += [(str(Path(PySide6.__file__).parent / "translations/qtbase_zh_TW.qm"), "pdfpick/assets")]
 data += copy_metadata("pdfpick")
 binaries = []
 hiddenimports = []

@@ -20,7 +20,19 @@ def main(report_path: str) -> int:
         from pdfpick.app import load_app_icon
         from pdfpick.core import DocumentSelection, export_selected_pages, export_documents, split_documents
         from pdfpick.renderer import start_render_backend
+        from pdfpick.preferences import LanguageController
+        from pdfpick.strings import tr
+        from pdfpick.theme import ThemeController
         app = QApplication([])
+        language = LanguageController("zh")
+        if language.qt_translator.isEmpty():
+            raise RuntimeError("Traditional Chinese dialog translations are missing")
+        language.set_mode("en")
+        if tr("第 {p0} 頁", p0=1) != "Page 1":
+            raise RuntimeError("English translation failed")
+        theme = ThemeController(app, "light")
+        theme.set_mode("dark")
+        language.close()
         if load_app_icon().isNull():
             raise RuntimeError("Application icon is missing")
         with tempfile.TemporaryDirectory(prefix="pdfpick-smoke-") as directory:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pdfpick.strings import tr
+
 import os
 import tempfile
 from dataclasses import dataclass
@@ -49,16 +51,16 @@ def _prepare_documents(documents: Iterable[DocumentSelection]):
         source = Path(document.source).resolve()
         if source not in readers:
             if not source.is_file():
-                raise FileNotFoundError(f"找不到來源 PDF 檔案：{source}")
+                raise FileNotFoundError(tr('找不到來源 PDF 檔案：{p0}', p0=source))
             readers[source] = PdfReader(source)
         reader = readers[source]
         if reader.is_encrypted:
-            raise UnsupportedEncryptedPdfError(f"目前不支援密碼保護的 PDF：{source}")
+            raise UnsupportedEncryptedPdfError(tr('目前不支援密碼保護的 PDF：{p0}', p0=source))
         if any(page < 0 or page >= len(reader.pages) for page in document.pages):
-            raise IndexError(f"選取的頁碼超出來源 PDF 範圍：{source}")
+            raise IndexError(tr('選取的頁碼超出來源 PDF 範圍：{p0}', p0=source))
         prepared.append((source, reader, document.pages))
     if not prepared:
-        raise ValueError("請至少選取一頁。")
+        raise ValueError(tr('請至少選取一頁。'))
     return prepared
 
 
@@ -124,9 +126,9 @@ def split_documents(
     outputs = split_output_paths(Path(destination).resolve(), sum(len(pages) for _, _, pages in prepared))
     protected = {source for source, _, _ in prepared} | {Path(path).resolve() for path in protected_sources}
     if protected.intersection(outputs):
-        raise ValueError("輸出檔案不可覆蓋來源 PDF。")
+        raise ValueError(tr('輸出檔案不可覆蓋來源 PDF。'))
     if not overwrite and any(path.exists() for path in outputs):
-        raise FileExistsError("部分單頁檔案已存在，請確認覆蓋或更換檔名。")
+        raise FileExistsError(tr('部分單頁檔案已存在，請確認覆蓋或更換檔名。'))
     outputs[0].parent.mkdir(parents=True, exist_ok=True)
     # Finish generating every page before publishing any output file.
     with tempfile.TemporaryDirectory(prefix=".pdfpick-split-", dir=outputs[0].parent) as staging:
@@ -155,25 +157,25 @@ def split_documents(
                     os.link(pending, output)
                 published += 1
         except OSError as exc:
-            raise OSError(f"拆分輸出失敗；已完成 {published} / {len(outputs)} 個檔案。\n{exc}") from exc
+            raise OSError(tr('拆分輸出失敗；已完成 {p0} / {p1} 個檔案。\n{p2}', p0=published, p1=len(outputs), p2=exc)) from exc
     return outputs
 
 
 def inspect_pdf(source: str | Path) -> PdfInfo:
     path = Path(source).resolve()
     if not path.is_file():
-        raise InvalidPdfError("找不到來源 PDF 檔案。")
+        raise InvalidPdfError(tr('找不到來源 PDF 檔案。'))
     try:
         reader = PdfReader(path)
         if reader.is_encrypted:
-            raise UnsupportedEncryptedPdfError("目前不支援密碼保護的 PDF。")
+            raise UnsupportedEncryptedPdfError(tr('目前不支援密碼保護的 PDF。'))
         page_count = len(reader.pages)
     except UnsupportedEncryptedPdfError:
         raise
     except Exception as exc:
-        raise InvalidPdfError("無法讀取這個 PDF，檔案可能已損壞或格式不受支援。") from exc
+        raise InvalidPdfError(tr('無法讀取這個 PDF，檔案可能已損壞或格式不受支援。')) from exc
     if page_count == 0:
-        raise InvalidPdfError("這個 PDF 沒有可用的頁面。")
+        raise InvalidPdfError(tr('這個 PDF 沒有可用的頁面。'))
     return PdfInfo(path=path, page_count=page_count)
 
 
@@ -195,7 +197,7 @@ def export_documents(
     destination_path = Path(destination).resolve()
     protected = {source for source, _, _ in prepared} | {Path(path).resolve() for path in protected_sources}
     if destination_path in protected:
-        raise ValueError("輸出檔案不可覆蓋來源 PDF。")
+        raise ValueError(tr('輸出檔案不可覆蓋來源 PDF。'))
 
     destination_path.parent.mkdir(parents=True, exist_ok=True)
     temp_path: Path | None = None
