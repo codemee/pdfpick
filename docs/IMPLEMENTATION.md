@@ -207,7 +207,7 @@ render_scale = slider_percent / 100 × 96 / 72
 
 `preferences.LanguageController` 優先使用 `QLocale.system().uiLanguages()` 的第一個顯示語言，沒有顯示語言時才回退至 locale 語言；中文使用繁體中文，其餘使用英文。主視窗收到 `LocaleChange` 時僅在系統模式重新判斷。`strings.py` 集中翻譯表與 `tr()`，由 GUI、核心和背景錯誤共用；`localize_text()` 更新既有介面文字並保留格式化參數。切換時更新文字與提示，不重建文件或重新渲染頁面。
 
-檔案對話框使用 `DontUseNativeDialog`，搭配 Qt `qtbase_zh_TW.qm` 與標準按鈕翻譯。封裝設定將此 qm 放入 `pdfpick/assets`；來源執行則讀取 PySide6 的 translations 路徑。未翻譯文字回退原文。`packaging_smoke.py` 驗證 qm 存在與英文翻譯，GUI 測試以獨立設定檔隔離使用者偏好。
+檔案對話框使用 `DontUseNativeDialog`，搭配 Qt `qtbase_zh_TW.qm` 與標準按鈕翻譯。封裝設定透過 `QLibraryInfo.TranslationsPath` 取得各平台的 Qt 翻譯資源路徑，將 qm 放入 `pdfpick/assets`；來源執行同樣讀取 Qt 的 translations 路徑。未翻譯文字回退原文。`packaging_smoke.py` 驗證 qm 存在與英文翻譯，GUI 測試以獨立設定檔隔離使用者偏好。
 
 `ThemeController` 在 `system` 模式讀取 `QGuiApplication.styleHints().colorScheme()`，並監聽 `colorSchemeChanged`；`light`、`dark` 則優先使用手動設定。控制器由主視窗持有。每次套用主題時同時更新：
 
