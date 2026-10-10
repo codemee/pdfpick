@@ -66,6 +66,66 @@ def default_output_path(source: str | Path) -> Path:
     return path.with_name(f"{path.stem}_selected.pdf")
 
 
+def split_output_paths(destination: str | Path, count: int) -> list[Path]:
+    path = Path(destination)
+    digits = max(2, len(str(count)))
+    return [path.with_name(f"{path.stem}_{number:0{digits}d}.pdf")
+            for number in range(1, count + 1)]
+
+
+def split_selected_pages(
+    source: str | Path, destination: str | Path, selected: Iterable[int], *,
+    overwrite: bool = False,
+) -> list[Path]:
+    source_path = Path(source).resolve()
+    ordered = sorted(selected) if isinstance(selected, (set, frozenset)) else list(dict.fromkeys(selected))
+    if not ordered:
+        raise ValueError("請至少選取一頁。")
+    outputs = split_output_paths(Path(destination).resolve(), len(ordered))
+    if source_path in outputs:
+        raise ValueError("輸出檔案不可覆蓋來源 PDF。")
+    if not overwrite and any(path.exists() for path in outputs):
+        raise FileExistsError("部分單頁檔案已存在，請確認覆蓋或更換檔名。")
+    if not source_path.is_file():
+        raise FileNotFoundError("找不到來源 PDF 檔案。")
+    reader = PdfReader(source_path)
+    if reader.is_encrypted:
+        raise UnsupportedEncryptedPdfError("目前不支援密碼保護的 PDF。")
+    if any(page < 0 or page >= len(reader.pages) for page in ordered):
+        raise IndexError("選取的頁碼超出來源 PDF 範圍。")
+    outputs[0].parent.mkdir(parents=True, exist_ok=True)
+    # Finish generating every page before publishing any output file.
+    with tempfile.TemporaryDirectory(prefix=".pdfpick-split-", dir=outputs[0].parent) as staging:
+        staged = []
+        for page, output in zip(ordered, outputs):
+            writer = PdfWriter()
+            writer.add_page(reader.pages[page])
+            if reader.metadata:
+                writer.add_metadata({str(key): str(value) for key, value in reader.metadata.items()
+                                     if key and value is not None})
+            pending = Path(staging) / output.name
+            with pending.open("wb") as stream:
+                writer.write(stream)
+                stream.flush()
+                os.fsync(stream.fileno())
+            staged.append(pending)
+        published = 0
+        try:
+            for pending, output in zip(staged, outputs):
+                if overwrite:
+                    os.replace(pending, output)
+                elif os.name == "nt":
+                    # Windows rename is atomic and refuses an existing destination.
+                    os.rename(pending, output)
+                else:
+                    # Exclusive publication also protects against files created during export.
+                    os.link(pending, output)
+                published += 1
+        except OSError as exc:
+            raise OSError(f"拆分輸出失敗；已完成 {published} / {len(outputs)} 個檔案。\n{exc}") from exc
+    return outputs
+
+
 def inspect_pdf(source: str | Path) -> PdfInfo:
     path = Path(source).resolve()
     if not path.is_file():

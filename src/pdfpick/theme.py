@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from importlib.resources import files
+
 from PySide6.QtCore import QObject, Qt, Slot
 from PySide6.QtGui import QColor, QGuiApplication, QPalette
 from PySide6.QtWidgets import QApplication
@@ -59,22 +61,60 @@ class ThemeController(QObject):
         slider_track = "#5f6368" if dark else "#c4c7c5"
         slider_fill = "#8ab4f8" if dark else "#0b57d0"
         slider_handle = "#aecbfa" if dark else "#0b57d0"
+        hover = "#35383d" if dark else "#e7ebf0"
+        pressed = "#41464e" if dark else "#d8e3f3"
+        disabled = "#777b80" if dark else "#9aa0a6"
+        check = files("pdfpick").joinpath("assets", "check.svg").as_posix()
+        partial = files("pdfpick").joinpath("assets", "partial.svg").as_posix()
         self.app.setStyleSheet(
             f"""
             QFrame#pageCard {{ background: {card}; border: 1px solid {border};
                                border-radius: 8px; }}
             QFrame#pageCard QLabel, QFrame#pageCard QCheckBox {{ border: none; }}
-            QPushButton {{ min-height: 30px; padding: 2px 12px; }}
+            QToolBar {{ background: palette(window); border: none;
+                        border-bottom: 1px solid {border}; padding: 4px 8px; spacing: 4px; }}
+            QToolButton {{ background: transparent; border: 1px solid transparent;
+                           border-radius: 4px; padding: 4px; color: palette(button-text); }}
+            QToolButton:hover {{ background: {hover}; }}
+            QToolButton:pressed {{ background: {pressed}; }}
+            QToolButton:focus {{ border-color: {slider_fill}; }}
+            QToolButton:disabled {{ color: {disabled}; background: transparent; }}
+            QPushButton {{ background: {card}; color: palette(button-text);
+                           border: 1px solid {border}; border-radius: 5px;
+                           min-height: 30px; padding: 2px 12px; }}
+            QPushButton:hover {{ background: {hover}; border-color: {slider_fill}; }}
+            QPushButton:pressed {{ background: {pressed}; }}
+            QPushButton:focus {{ border-color: {slider_fill}; }}
+            QPushButton:disabled {{ color: {disabled}; }}
+            QCheckBox {{ spacing: 6px; }}
+            QCheckBox::indicator {{ width: 16px; height: 16px;
+                                    border: 1px solid {border}; border-radius: 3px;
+                                    background: {card}; }}
+            QCheckBox::indicator:hover {{ border-color: {slider_fill}; }}
+            QCheckBox::indicator:checked {{ background: #0b57d0; border-color: #0b57d0;
+                                            image: url("{check}"); }}
+            QCheckBox::indicator:indeterminate {{ background: #0b57d0; border-color: #0b57d0;
+                                                  image: url("{partial}"); }}
+            QCheckBox::indicator:disabled {{ background: {hover}; border-color: {border}; }}
             QScrollArea {{ border: 1px solid {border}; border-radius: 6px; }}
-            QSlider::groove:horizontal {{ height: 6px; background: {slider_track};
-                                          border-radius: 3px; }}
+            QStatusBar {{ background: palette(window); border: none; }}
+            QStatusBar::item {{ border: none; }}
+            QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
+            QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
+            QScrollBar::handle {{ background: {slider_track}; border-radius: 3px;
+                                 min-width: 24px; min-height: 24px; }}
+            QScrollBar::handle:hover {{ background: {slider_fill}; }}
+            QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; border: none; }}
+            QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+            QSlider::groove:horizontal {{ height: 2px; background: {slider_track};
+                                          border-radius: 1px; }}
             QSlider::sub-page:horizontal {{ background: {slider_fill};
-                                            border-radius: 3px; }}
+                                            border-radius: 1px; }}
             QSlider::add-page:horizontal {{ background: {slider_track};
-                                            border-radius: 3px; }}
+                                            border-radius: 1px; }}
             QSlider::handle:horizontal {{ background: {slider_handle};
-                                          border: 1px solid {slider_fill};
-                                          border-radius: 9px; width: 18px;
-                                          margin: -6px 0; }}
+                                          border: none;
+                                          border-radius: 5px; width: 10px;
+                                          margin: -4px 0; }}
             """
         )
