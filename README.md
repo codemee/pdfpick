@@ -17,14 +17,14 @@ Release 同時提供 SHA256 校驗檔。簽章與打包資訊見下方「Windows
 
 ### 2. 使用 uv tool 安裝
 
-已有 [uv](https://docs.astral.sh/uv/) 與 Git 時，可將目前儲存庫版本安裝到獨立工具環境：
+已有 [uv](https://docs.astral.sh/uv/) 時，可從 PyPI 安裝到獨立工具環境：
 
 ```powershell
-uv tool install "git+https://github.com/codemee/repdf.git"
+uv tool install repdf
 repdf
 ```
 
-需要 Python 3.11 以上版本；uv 可在需要時下載適用的 Python。新版本發布後，也可使用 Release 提供的 `repdf` wheel 下載網址安裝。若終端機找不到 `repdf`，執行 `uv tool update-shell` 後重新開啟終端機。既有舊版 wheel 仍安裝為 `pdfpick` 指令。
+需要 Python 3.11 以上版本；uv 可在需要時下載適用的 Python。也可使用 Release 的 `repdf` wheel 下載網址安裝。若終端機找不到 `repdf`，執行 `uv tool update-shell` 後重新開啟終端機。既有舊版 wheel 仍安裝為 `pdfpick` 指令。
 
 ### 3. 從原始碼使用 uv run
 
