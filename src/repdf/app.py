@@ -490,7 +490,6 @@ class MainWindow(QMainWindow):
         self._sync_controls()
         self.statusBar().showMessage(status)
         self._update_preference_actions()
-        QApplication.instance().setApplicationDisplayName(tr("repdf — PDF 選頁重組工具"))
 
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
@@ -837,7 +836,6 @@ def load_app_icon() -> QIcon:
 
 def configure_application(app: QApplication) -> None:
     app.setApplicationName("repdf")
-    app.setApplicationDisplayName(tr('repdf — PDF 選頁重組工具'))
     app.setOrganizationName("repdf")
     app.setStyle("Fusion")
     app.setWindowIcon(load_app_icon())
