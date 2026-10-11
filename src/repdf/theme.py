@@ -71,8 +71,8 @@ class ThemeController(QObject):
         hover = "#35383d" if dark else "#e7ebf0"
         pressed = "#41464e" if dark else "#d8e3f3"
         disabled = "#777b80" if dark else "#9aa0a6"
-        check = files("pdfpick").joinpath("assets", "check.svg").as_posix()
-        partial = files("pdfpick").joinpath("assets", "partial.svg").as_posix()
+        check = files("repdf").joinpath("assets", "check.svg").as_posix()
+        partial = files("repdf").joinpath("assets", "partial.svg").as_posix()
         self.app.setStyleSheet(
             f"""
             QFrame#pageCard {{ background: {card}; border: 1px solid {border};

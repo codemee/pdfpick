@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pypdf import PdfReader, PdfWriter
 
-from pdfpick.core import (
+from repdf.core import (
     InvalidPdfError,
     SelectionState,
     UnsupportedEncryptedPdfError,
@@ -142,7 +142,7 @@ def test_split_generation_failure_leaves_outputs_untouched(tmp_path, monkeypatch
         split_selected_pages(source, tmp_path / "out.pdf", [0, 1], overwrite=True)
     assert existing.read_bytes() == b"keep me"
     assert not (tmp_path / "out_02.pdf").exists()
-    assert not list(tmp_path.glob(".pdfpick-split-*"))
+    assert not list(tmp_path.glob(".repdf-split-*"))
 
 
 def test_multi_document_export_order_and_metadata(tmp_path) -> None:
@@ -184,7 +184,7 @@ def test_multi_document_validates_all_sources_before_writing(tmp_path) -> None:
 
 
 def test_multi_document_reads_each_source_once(tmp_path, monkeypatch) -> None:
-    import pdfpick.core as core
+    import repdf.core as core
     source = tmp_path / "source.pdf"
     make_pdf(source, [200, 300])
     calls = []

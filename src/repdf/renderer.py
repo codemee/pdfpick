@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pdfpick.strings import tr
+from repdf.strings import tr
 
 import json
 import secrets
@@ -20,7 +20,7 @@ def start_render_backend() -> subprocess.Popen[str]:
         return _start_frozen_backend()
     creation_flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
     process = subprocess.Popen(
-        [sys.executable, "-m", "pdfpick.render_worker", "--server"],
+        [sys.executable, "-m", "repdf.render_worker", "--server"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

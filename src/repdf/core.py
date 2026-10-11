@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pdfpick.strings import tr
+from repdf.strings import tr
 
 import os
 import tempfile
@@ -12,15 +12,15 @@ from typing import Iterable
 from pypdf import PdfReader, PdfWriter
 
 
-class PdfPickError(Exception):
+class RepdfError(Exception):
     """Base error presented to the user."""
 
 
-class UnsupportedEncryptedPdfError(PdfPickError):
+class UnsupportedEncryptedPdfError(RepdfError):
     """Raised when a PDF requires a password."""
 
 
-class InvalidPdfError(PdfPickError):
+class InvalidPdfError(RepdfError):
     """Raised when a PDF cannot be parsed."""
 
 
@@ -131,7 +131,7 @@ def split_documents(
         raise FileExistsError(tr('部分單頁檔案已存在，請確認覆蓋或更換檔名。'))
     outputs[0].parent.mkdir(parents=True, exist_ok=True)
     # Finish generating every page before publishing any output file.
-    with tempfile.TemporaryDirectory(prefix=".pdfpick-split-", dir=outputs[0].parent) as staging:
+    with tempfile.TemporaryDirectory(prefix=".repdf-split-", dir=outputs[0].parent) as staging:
         staged = []
         ordered = [(reader, page) for _, reader, pages in prepared for page in pages]
         for (reader, page), output in zip(ordered, outputs):
@@ -209,7 +209,7 @@ def export_documents(
         _copy_metadata(prepared[0][1], writer)
 
         with tempfile.NamedTemporaryFile(
-            mode="wb", suffix=".pdf", prefix=".pdfpick-", dir=destination_path.parent,
+            mode="wb", suffix=".pdf", prefix=".repdf-", dir=destination_path.parent,
             delete=False,
         ) as stream:
             temp_path = Path(stream.name)

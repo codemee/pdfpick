@@ -2,4 +2,4 @@
 
 from importlib.metadata import version
 
-__version__ = version("pdfpick")
+__version__ = version("repdf")

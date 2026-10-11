@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pdfpick.strings import tr
+from repdf.strings import tr
 
 from PySide6.QtCore import QEasingCurve, QMimeData, QPoint, QPropertyAnimation, Qt, Signal
 from PySide6.QtGui import QDrag, QDragEnterEvent, QDragLeaveEvent, QDragMoveEvent, QDropEvent, QImage, QMouseEvent, QPixmap
@@ -157,7 +157,7 @@ class DragLabel(QLabel):
 class PageCard(QFrame):
     selection_changed = Signal(int, bool)
     reorder_requested = Signal(int, int)
-    DRAG_MIME_TYPE = "application/x-pdfpick-page"
+    DRAG_MIME_TYPE = "application/x-repdf-page"
 
     def __init__(self, page_index: int, target_width: int) -> None:
         super().__init__()

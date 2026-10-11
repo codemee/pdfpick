@@ -5,7 +5,7 @@ from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from pypdf import PdfReader, PdfWriter
 
-from pdfpick.app import DocumentView, MainWindow, load_app_icon
+from repdf.app import DocumentView, MainWindow, load_app_icon
 
 
 def ready_document(window, path, count, *, zoom=100):
@@ -72,7 +72,7 @@ def test_drag_insertion_commits_preview_order_across_rows(qtbot, monkeypatch) ->
 
 
 def test_drag_thumbnail_contains_preview_and_is_bounded(qtbot) -> None:
-    from pdfpick.widgets import PageCard
+    from repdf.widgets import PageCard
 
     card = PageCard(0, 600)
     qtbot.addWidget(card)

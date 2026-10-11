@@ -3,7 +3,17 @@ from importlib.resources import files
 from PySide6.QtCore import QLibraryInfo, QLocale, QObject, QTranslator, Signal
 from PySide6.QtWidgets import QApplication
 
-from pdfpick import strings
+from repdf import strings
+
+
+def migrate_preferences(settings, legacy) -> None:
+    """Copy existing choices once without changing the old app's settings."""
+    modes = {"ui/language": {"system", "zh", "en"}, "ui/theme": {"system", "light", "dark"}}
+    for key, allowed in modes.items():
+        if not settings.contains(key):
+            value = legacy.value(key)
+            if value in allowed:
+                settings.setValue(key, value)
 
 
 def system_language() -> str:
@@ -40,7 +50,7 @@ class LanguageController(QObject):
         self.mode = mode if mode in {"system", "zh", "en"} else "system"
         self.translator = DialogTranslator(self)
         self.qt_translator = QTranslator(self)
-        if not self.qt_translator.load(str(files("pdfpick").joinpath("assets", "qtbase_zh_TW.qm"))):
+        if not self.qt_translator.load(str(files("repdf").joinpath("assets", "qtbase_zh_TW.qm"))):
             self.qt_translator.load("qtbase_zh_TW", QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath))
         self.refresh()
 

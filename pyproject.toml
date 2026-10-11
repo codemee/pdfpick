@@ -1,5 +1,5 @@
 [project]
-name = "pdfpick"
+name = "repdf"
 version = "0.0.7"
 description = "Select and recombine pages from a PDF with a desktop GUI."
 readme = "README.md"
@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-pdfpick = "pdfpick.entrypoint:main"
+repdf = "repdf.entrypoint:main"
 
 [dependency-groups]
 build = [

@@ -26,8 +26,8 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     if sys.platform == "darwin":
         from PIL import Image
-        with Image.open(ROOT / "src/pdfpick/assets/pdfpick.png") as image:
-            image.resize((1024, 1024)).save(OUT / "PDFPick.icns", format="ICNS")
+        with Image.open(ROOT / "src/repdf/assets/repdf.png") as image:
+            image.resize((1024, 1024)).save(OUT / "repdf.icns", format="ICNS")
     build_env = os.environ.copy()
     if sys.platform == "win32":
         # Prevent unrelated tools on PATH from supplying incompatible native DLLs.
@@ -38,9 +38,9 @@ def main() -> None:
         )))
     run(sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
         "--distpath", str(OUT / "dist"), "--workpath", str(OUT / "build"),
-        str(ROOT / "packaging/pdfpick.spec"), env=build_env)
-    executable = (OUT / "dist/PDFPick.app/Contents/MacOS/PDFPick"
-                  if sys.platform == "darwin" else OUT / "dist/PDFPick.exe")
+        str(ROOT / "packaging/repdf.spec"), env=build_env)
+    executable = (OUT / "dist/repdf.app/Contents/MacOS/repdf"
+                  if sys.platform == "darwin" else OUT / "dist/repdf.exe")
     report = OUT / "smoke-report.json"
     report.unlink(missing_ok=True)
     result = subprocess.run([str(executable), "--self-test", str(report)], cwd=OUT, timeout=120)
@@ -54,13 +54,13 @@ def main() -> None:
     arch = {"AMD64": "x86_64", "aarch64": "arm64"}.get(platform.machine(), platform.machine())
     system = "macos" if sys.platform == "darwin" else "windows"
     suffix = "dmg" if sys.platform == "darwin" else "exe"
-    artifact = release / f"PDFPick-{version}-{system}-{arch}.{suffix}"
+    artifact = release / f"repdf-{version}-{system}-{arch}.{suffix}"
     if sys.platform == "darwin":
         with tempfile.TemporaryDirectory(prefix="dmg-", dir=OUT) as staging:
             stage = Path(staging)
-            run("ditto", str(OUT / "dist/PDFPick.app"), str(stage / "PDFPick.app"))
+            run("ditto", str(OUT / "dist/repdf.app"), str(stage / "repdf.app"))
             (stage / "Applications").symlink_to("/Applications", target_is_directory=True)
-            run("hdiutil", "create", "-volname", f"PDFPick {version}", "-srcfolder",
+            run("hdiutil", "create", "-volname", f"repdf {version}", "-srcfolder",
                 str(stage), "-format", "UDZO", "-ov", str(artifact))
         run("hdiutil", "verify", str(artifact))
     else:

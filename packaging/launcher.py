@@ -1,4 +1,4 @@
-from pdfpick.entrypoint import main
+from repdf.entrypoint import main
 
 if __name__ == "__main__":
     raise SystemExit(main())

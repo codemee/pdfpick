@@ -1,6 +1,6 @@
 import io
 
-from pdfpick.renderer import RenderService
+from repdf.renderer import RenderService
 
 
 class FakeBackend:

@@ -1,14 +1,14 @@
 from types import SimpleNamespace
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QEvent, QLocale, Qt
+from PySide6.QtCore import QCoreApplication, QEvent, QLocale, QSettings, Qt
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QApplication
 
-from pdfpick.app import DocumentView, MainWindow
-from pdfpick.core import export_documents
-from pdfpick.preferences import system_language
-from pdfpick.strings import localize_text
+from repdf.app import DocumentView, MainWindow
+from repdf.core import export_documents
+from repdf.preferences import migrate_preferences, system_language
+from repdf.strings import localize_text
 
 
 def test_language_cycle_retranslates_existing_pages_without_changing_state(qtbot, monkeypatch, tmp_path):
@@ -34,7 +34,7 @@ def test_language_cycle_retranslates_existing_pages_without_changing_state(qtbot
     assert doc.page_order == [2, 0, 1] and doc.selected_pages == {2} and doc.zoom == 75
     assert window.tabs.tabText(0) == "單數頁"
     assert str(doc.source_path) in window.windowTitle()
-    assert "PDFPick" in window.windowTitle()
+    assert "repdf" in window.windowTitle()
     with pytest.raises(ValueError, match="Select at least one page"):
         export_documents([], tmp_path / "out.pdf")
     window.language_action.trigger()
@@ -46,7 +46,7 @@ def test_language_cycle_retranslates_existing_pages_without_changing_state(qtbot
 def test_theme_cycle_respects_manual_override_and_system_changes(qtbot, monkeypatch):
     scheme = [Qt.ColorScheme.Dark]
     hints = SimpleNamespace(colorScheme=lambda: scheme[0])
-    monkeypatch.setattr("pdfpick.theme.QGuiApplication.styleHints", lambda: hints)
+    monkeypatch.setattr("repdf.theme.QGuiApplication.styleHints", lambda: hints)
     window = MainWindow()
     qtbot.addWidget(window)
     theme = window._theme_controller
@@ -87,7 +87,7 @@ def test_preferences_are_restored_on_next_window(qtbot):
 def test_locale_change_only_affects_system_mode(qtbot, monkeypatch):
     window = MainWindow()
     qtbot.addWidget(window)
-    monkeypatch.setattr("pdfpick.preferences.system_language", lambda: "en")
+    monkeypatch.setattr("repdf.preferences.system_language", lambda: "en")
     QApplication.sendEvent(window, QEvent(QEvent.Type.LocaleChange))
     assert window.odd_checkbox.text() == "Odd pages"
     window.language_controller.set_mode("zh")
@@ -98,7 +98,7 @@ def test_locale_change_only_affects_system_mode(qtbot, monkeypatch):
 @pytest.mark.parametrize("locale,expected", [("zh_TW", "zh"), ("zh_CN", "zh"), ("en_US", "en"), ("fr_FR", "en")])
 def test_system_locale_resolution(monkeypatch, locale, expected):
     original_locale = QLocale(locale)
-    monkeypatch.setattr("pdfpick.preferences.QLocale", SimpleNamespace(system=lambda: original_locale, Language=QLocale.Language))
+    monkeypatch.setattr("repdf.preferences.QLocale", SimpleNamespace(system=lambda: original_locale, Language=QLocale.Language))
     assert system_language() == expected
 
 
@@ -118,5 +118,17 @@ def test_dialog_translations_and_unknown_text_fallback(qtbot):
 
 def test_system_language_uses_display_language_before_region(monkeypatch):
     locale = SimpleNamespace(uiLanguages=lambda: ["en-US"], language=lambda: QLocale.Language.Chinese)
-    monkeypatch.setattr("pdfpick.preferences.QLocale", SimpleNamespace(system=lambda: locale, Language=QLocale.Language))
+    monkeypatch.setattr("repdf.preferences.QLocale", SimpleNamespace(system=lambda: locale, Language=QLocale.Language))
     assert system_language() == "en"
+
+
+def test_rename_migrates_preferences_without_overwriting_current_choices(tmp_path):
+    old = QSettings(str(tmp_path / "old.ini"), QSettings.Format.IniFormat)
+    new = QSettings(str(tmp_path / "new.ini"), QSettings.Format.IniFormat)
+    old.setValue("ui/language", "en")
+    old.setValue("ui/theme", "dark")
+    new.setValue("ui/theme", "light")
+    migrate_preferences(new, old)
+    assert new.value("ui/language") == "en"
+    assert new.value("ui/theme") == "light"
+    assert old.value("ui/theme") == "dark"

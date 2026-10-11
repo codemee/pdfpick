@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pdfpick.strings import tr, localize_text
+from repdf.strings import tr, localize_text
 
 import sys
 import tempfile
@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from pdfpick.core import (
+from repdf.core import (
     SelectionState,
     default_output_path,
     parity_state,
@@ -49,13 +49,13 @@ from pdfpick.core import (
     split_output_paths,
     DocumentSelection,
 )
-from pdfpick import __version__
-from pdfpick.icons import toolbar_icon
-from pdfpick.theme import ThemeController
-from pdfpick.preferences import LanguageController
-from pdfpick.renderer import RenderService, start_render_backend
-from pdfpick.widgets import PageCard, PageGrid
-from pdfpick.workers import ExportPdfTask, LoadPdfTask
+from repdf import __version__
+from repdf.icons import toolbar_icon
+from repdf.theme import ThemeController
+from repdf.preferences import LanguageController, migrate_preferences
+from repdf.renderer import RenderService, start_render_backend
+from repdf.widgets import PageCard, PageGrid
+from repdf.workers import ExportPdfTask, LoadPdfTask
 
 
 class DocumentView(QWidget):
@@ -304,7 +304,8 @@ class DocumentView(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self, render_backend=None) -> None:
         super().__init__()
-        self.settings = QSettings("PDFPick", "PDFPick")
+        self.settings = QSettings("repdf", "repdf")
+        migrate_preferences(self.settings, QSettings("PDFPick", "PDFPick"))
         self.language_controller = LanguageController(self.settings.value("ui/language", "system"), self)
         self._theme_controller = ThemeController(QApplication.instance(), self.settings.value("ui/theme", "system"), self)
         self._update_window_title()
@@ -314,7 +315,7 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         self.thread_pool = QThreadPool(self)
         self.thread_pool.setMaxThreadCount(4)
-        self.preview_temp = tempfile.TemporaryDirectory(prefix="pdfpick-preview-")
+        self.preview_temp = tempfile.TemporaryDirectory(prefix="repdf-preview-")
         self.render_service = RenderService(render_backend if render_backend is not None else start_render_backend(), self)
         self.render_service.message.connect(self._handle_render_message, Qt.ConnectionType.QueuedConnection)
         self.documents = {}
@@ -489,7 +490,7 @@ class MainWindow(QMainWindow):
         self._sync_controls()
         self.statusBar().showMessage(status)
         self._update_preference_actions()
-        QApplication.instance().setApplicationDisplayName(tr("PDF 選頁重組工具"))
+        QApplication.instance().setApplicationDisplayName(tr("repdf — PDF 選頁重組工具"))
 
     def changeEvent(self, event: QEvent) -> None:
         super().changeEvent(event)
@@ -500,7 +501,7 @@ class MainWindow(QMainWindow):
                 self.language_controller.refresh()
 
     def _update_window_title(self, path: Path | None = None) -> None:
-        title = tr('PDF 選頁重組工具 {p0} 版', p0=__version__)
+        title = tr('repdf — PDF 選頁重組工具 {p0} 版', p0=__version__)
         self.setWindowTitle(f"{path.resolve()} — {title}" if path is not None else title)
 
     def _adjust_zoom(self, delta: int) -> None:
@@ -831,12 +832,13 @@ class MainWindow(QMainWindow):
 
 
 def load_app_icon() -> QIcon:
-    return QIcon(str(files("pdfpick").joinpath("assets", "pdfpick.png")))
+    return QIcon(str(files("repdf").joinpath("assets", "repdf.png")))
 
 
 def configure_application(app: QApplication) -> None:
-    app.setApplicationName(tr('PDF 選頁重組工具'))
-    app.setOrganizationName("PDFPick")
+    app.setApplicationName("repdf")
+    app.setApplicationDisplayName(tr('repdf — PDF 選頁重組工具'))
+    app.setOrganizationName("repdf")
     app.setStyle("Fusion")
     app.setWindowIcon(load_app_icon())
     available = set(QFontDatabase.families())

@@ -1,10 +1,10 @@
-# PDFPick 實作與維護指南
+# repdf 實作與維護指南
 
-本文件描述 PDFPick 目前的程式架構、主要資料流、重要設計決策與修改注意事項。若要新增功能或除錯，建議先閱讀本文件，再從 `src/pdfpick/app.py` 進入程式。
+本文件描述 repdf 目前的程式架構、主要資料流、重要設計決策與修改注意事項。若要新增功能或除錯，建議先閱讀本文件，再從 `src/repdf/app.py` 進入程式。
 
 ## 1. 專案概觀
 
-PDFPick 是 Windows 優先的 Python 桌面程式，功能是：
+repdf 是 Windows 優先的 Python 桌面程式，功能是：
 
 1. 以可勾選、拖曳排序及關閉的標籤頁開啟多個 PDF。
 2. 顯示所有頁面的可捲動預覽。
@@ -15,7 +15,7 @@ PDFPick 是 Windows 優先的 Python 桌面程式，功能是：
 
 ```powershell
 uv sync
-uv run pdfpick
+uv run repdf
 uv run pytest
 ```
 
@@ -33,7 +33,7 @@ uv run pytest
 ## 3. 目錄與模組責任
 
 ```text
-src/pdfpick/
+src/repdf/
 ├── app.py             主視窗與独立文件元件 DocumentView、標籤、GUI 事件與資料流協調
 ├── core.py            不依賴 GUI 的選取、驗證與 PDF 輸出邏輯
 ├── widgets.py         單一頁面預覽卡片 PageCard
@@ -51,7 +51,7 @@ tests/
 
 ## 4. 啟動與元件生命週期
 
-公開入口為 `pdfpick.entrypoint:main`，一般啟動交由 `pdfpick.app:main`；封裝版渲染服務與 `--self-test` 由 entrypoint 分派。
+公開入口為 `repdf.entrypoint:main`，一般啟動交由 `repdf.app:main`；封裝版渲染服務與 `--self-test` 由 entrypoint 分派。
 
 啟動順序刻意設計如下：
 
@@ -108,7 +108,7 @@ tests/
 {
   "source": "C:/path/input.pdf",
   "scale": 1.3333333333,
-  "output_dir": "C:/Temp/pdfpick-preview-...",
+  "output_dir": "C:/Temp/repdf-preview-...",
   "generation": 4
 }
 ```
@@ -120,7 +120,7 @@ tests/
   "type": "page",
   "generation": 4,
   "page": 0,
-  "path": "C:/Temp/pdfpick-preview-.../g4-p0.png"
+  "path": "C:/Temp/repdf-preview-.../g4-p0.png"
 }
 ```
 
@@ -191,7 +191,7 @@ render_scale = slider_percent / 100 × 96 / 72
 3. 驗證頁碼範圍與來源是否仍存在。
 4. 使用 pypdf 直接加入原始頁面，不以縮圖重建 PDF。
 5. 複製第一個實際提供頁面的文件 metadata。
-6. 先在目的資料夾寫入 `.pdfpick-*.pdf` 暫存檔。
+6. 先在目的資料夾寫入 `.repdf-*.pdf` 暫存檔。
 7. 寫入完成並 `fsync()` 後，以 `os.replace()` 原子替換目的檔。
 8. 發生錯誤時刪除暫存檔，不留下半成品。
 
@@ -203,11 +203,11 @@ render_scale = slider_percent / 100 × 96 / 72
 
 ## 11. 主題、字型與圖示
 
-工具列提供 `language_action`、`theme_action` 三態按鈕，分別循環 `system → zh → en` 與 `system → light → dark`。`QSettings("PDFPick", "PDFPick")` 的 `ui/language`、`ui/theme` 保存選擇，預設均為 `system`，無效值回退為系統模式。
+工具列提供 `language_action`、`theme_action` 三態按鈕，分別循環 `system → zh → en` 與 `system → light → dark`。`QSettings("repdf", "repdf")` 的 `ui/language`、`ui/theme` 保存選擇，預設均為 `system`，無效值回退為系統模式。首次啟動會將舊版 `QSettings("PDFPick", "PDFPick")` 的有效語言與配色選擇複製到尚未設定的新欄位，不覆蓋 repdf 已有設定，也不刪除舊設定。
 
 `preferences.LanguageController` 優先使用 `QLocale.system().uiLanguages()` 的第一個顯示語言，沒有顯示語言時才回退至 locale 語言；中文使用繁體中文，其餘使用英文。主視窗收到 `LocaleChange` 時僅在系統模式重新判斷。`strings.py` 集中翻譯表與 `tr()`，由 GUI、核心和背景錯誤共用；`localize_text()` 更新既有介面文字並保留格式化參數。切換時更新文字與提示，不重建文件或重新渲染頁面。
 
-檔案對話框使用 `DontUseNativeDialog`，搭配 Qt `qtbase_zh_TW.qm` 與標準按鈕翻譯。封裝設定透過 `QLibraryInfo.TranslationsPath` 取得各平台的 Qt 翻譯資源路徑，將 qm 放入 `pdfpick/assets`；來源執行同樣讀取 Qt 的 translations 路徑。未翻譯文字回退原文。`packaging_smoke.py` 驗證 qm 存在與英文翻譯，GUI 測試以獨立設定檔隔離使用者偏好。
+檔案對話框使用 `DontUseNativeDialog`，搭配 Qt `qtbase_zh_TW.qm` 與標準按鈕翻譯。封裝設定透過 `QLibraryInfo.TranslationsPath` 取得各平台的 Qt 翻譯資源路徑，將 qm 放入 `repdf/assets`；來源執行同樣讀取 Qt 的 translations 路徑。未翻譯文字回退原文。`packaging_smoke.py` 驗證 qm 存在與英文翻譯，GUI 測試以獨立設定檔隔離使用者偏好。
 
 `ThemeController` 在 `system` 模式讀取 `QGuiApplication.styleHints().colorScheme()`，並監聽 `colorSchemeChanged`；`light`、`dark` 則優先使用手動設定。控制器由主視窗持有。每次套用主題時同時更新：
 
@@ -224,7 +224,7 @@ render_scale = slider_percent / 100 × 96 / 72
 3. Noto Sans TC
 4. Arial
 
-圖示位於 `src/pdfpick/assets/pdfpick.png` 與 `pdfpick.ico`。目前程式使用 PNG 建立 `QIcon`；ICO 提供未來 Windows EXE 打包使用，內含 16、24、32、48、64、128、256px 尺寸。
+圖示位於 `src/repdf/assets/repdf.png` 與 `repdf.ico`。目前程式使用 PNG 建立 `QIcon`；ICO 提供未來 Windows EXE 打包使用，內含 16、24、32、48、64、128、256px 尺寸。
 
 ## 12. 測試覆蓋範圍
 
@@ -269,10 +269,12 @@ render_scale = slider_percent / 100 × 96 / 72
 
 ## 15. 桌面套件打包
 
-- packaging/pdfpick.spec：Windows 使用 onefile windowed EXE；macOS 使用 onedir App bundle，保留原生函式庫的符號連結後封裝為 DMG。
+- packaging/repdf.spec：Windows 使用 onefile windowed EXE；macOS 使用 onedir App bundle，保留原生函式庫的符號連結後封裝為 DMG。
 - scripts/build_desktop.py：執行 PyInstaller、封裝後功能檢查、DMG 建立與 SHA256 校驗檔產生。
 - .github/workflows/build-desktop.yml：兩個 GitHub 雲端原生 runner 建置 Windows x86_64 與 macOS arm64；Release 成功建置後才附加產物。
 - entrypoint.py：在載入 GUI 前辨識背景後端與封裝自我檢查模式，避免子程序再次開啟 GUI。
 - renderer.py：來源碼模式沿用 stdin/stdout；凍結模式以 loopback TCP、一次性隨機握手 token 與 UTF-8 串流通訊，因為 Windows windowed bootloader 沒有標準輸入輸出。
 - packaging_smoke.py：在封裝執行檔中實際渲染兩頁 PDF、載入 Qt 圖示並驗證指定順序的 PDF 輸出。
-- 版本資訊讀取已安裝的 pdfpick distribution metadata；PyInstaller 同時收集該 metadata，避免視窗與套件版本不同步。
+- 版本資訊讀取已安裝的 repdf distribution metadata；PyInstaller 同時收集該 metadata，避免視窗與套件版本不同步。
+
+PyPI 發布需先為 `codemee/repdf` 配置 repdf 專案的 Trusted Publisher，並將儲存庫變數 `PYPI_PUBLISH_ENABLED` 設為 `true`；未啟用時只使用 GitHub Release 發布。

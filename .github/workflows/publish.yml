@@ -20,13 +20,13 @@ concurrency:
 
 jobs:
   publish:
-    # The existing PyPI Trusted Publisher belongs to the upstream repository.
-    if: github.repository == 'meeinoffice/pdfpick'
+    # Enable after configuring a Trusted Publisher for the repdf PyPI project.
+    if: github.repository == 'codemee/repdf' && vars.PYPI_PUBLISH_ENABLED == 'true'
     name: Publish release distributions
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/pdfpick/
+      url: https://pypi.org/project/repdf/
     permissions:
       contents: read
       id-token: write

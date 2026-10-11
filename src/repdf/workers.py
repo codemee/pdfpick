@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, Signal, Slot
 
-from pdfpick.core import DocumentSelection, export_documents, inspect_pdf, split_documents
+from repdf.core import DocumentSelection, export_documents, inspect_pdf, split_documents
 
 
 class LoadSignals(QObject):

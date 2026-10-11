@@ -1,4 +1,4 @@
-# PDF 選頁重組工具
+# repdf — PDF 選頁重組工具
 
 使用 PySide6 製作的 Windows 桌面工具，可用標籤頁開啟多個 PDF、勾選指定頁面，並依標籤與頁面排列順序重組或拆分輸出。預覽縮圖不會影響輸出品質。
 
@@ -6,23 +6,25 @@
 
 ### 1. 下載發布的執行檔／App（建議）
 
-從 [GitHub Releases](https://github.com/codemee/pdfpick/releases/latest) 下載適合平台的檔案，不需要安裝 Python 或 uv：
+從 [GitHub Releases](https://github.com/codemee/repdf/releases/latest) 下載適合平台的檔案，不需要安裝 Python 或 uv：
 
-- **Windows x86_64**：下載 `PDFPick-<版本>-windows-x86_64.exe`，直接執行。
-- **macOS Apple Silicon（arm64）**：下載 `PDFPick-<版本>-macos-arm64.dmg`，開啟後將 `PDFPick.app` 拖入 Applications，再從 Applications 啟動。
+- **Windows x86_64**：下載 `repdf-<版本>-windows-x86_64.exe`，直接執行。
+- **macOS Apple Silicon（arm64）**：下載 `repdf-<版本>-macos-arm64.dmg`，開啟後將 `repdf.app` 拖入 Applications，再從 Applications 啟動。
+
+既有 `v0.0.7` 及較早的 Release 仍使用 `PDFPick` 檔名與 `PDFPick.app`；`repdf` 檔名會從重新命名後的新版本開始採用。
 
 Release 同時提供 SHA256 校驗檔。簽章與打包資訊見下方「Windows 執行檔與 macOS App／DMG」。
 
 ### 2. 使用 uv tool 安裝
 
-已有 [uv](https://docs.astral.sh/uv/) 時，可從 Release 的 wheel 安裝到獨立工具環境。以下以 `v0.0.7` 為例：
+已有 [uv](https://docs.astral.sh/uv/) 與 Git 時，可將目前儲存庫版本安裝到獨立工具環境：
 
 ```powershell
-uv tool install "https://github.com/codemee/pdfpick/releases/download/v0.0.7/pdfpick-0.0.7-py3-none-any.whl"
-pdfpick
+uv tool install "git+https://github.com/codemee/repdf.git"
+repdf
 ```
 
-需要 Python 3.11 以上版本；uv 可在需要時下載適用的 Python。安裝其他版本時，請將網址中的版本號替換成該 Release 的版本。若終端機找不到 `pdfpick`，執行 `uv tool update-shell` 後重新開啟終端機。
+需要 Python 3.11 以上版本；uv 可在需要時下載適用的 Python。新版本發布後，也可使用 Release 提供的 `repdf` wheel 下載網址安裝。若終端機找不到 `repdf`，執行 `uv tool update-shell` 後重新開啟終端機。既有舊版 wheel 仍安裝為 `pdfpick` 指令。
 
 ### 3. 從原始碼使用 uv run
 
@@ -30,7 +32,7 @@ pdfpick
 
 ```powershell
 uv sync
-uv run pdfpick
+uv run repdf
 ```
 
 ## 操作方式
@@ -81,7 +83,7 @@ uv run pytest
 
 GitHub Actions 的「Build desktop apps」會在 main 更新、PR 或 Release 發佈時打包，也可在 Actions 頁面以 Run workflow 手動執行並指定分支或標籤。Release 的標籤必須包含打包設定檔。
 
-產物包含 Windows x86_64 單一 EXE、macOS Apple Silicon（arm64）DMG，以及 SHA256 校驗檔。手動執行與一般提交的產物可從 Actions 的 Artifacts 下載；Release 發佈時會自動附加到該 Release。DMG 中可將 PDFPick.app 拖入 Applications，不需要另外安裝 Python。
+產物包含 Windows x86_64 單一 EXE、macOS Apple Silicon（arm64）DMG，以及 SHA256 校驗檔。手動執行與一般提交的產物可從 Actions 的 Artifacts 下載；Release 發佈時會自動附加到該 Release。DMG 中可將 repdf.app 拖入 Applications，不需要另外安裝 Python。
 
 目前未設定 Windows 程式碼簽章或 macOS Developer ID 簽章／公證，因此下載後可能出現系統的安全提示；這些套件並非已公證的 macOS 發行版。
 

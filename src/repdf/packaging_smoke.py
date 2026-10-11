@@ -16,13 +16,13 @@ def main(report_path: str) -> int:
         from PySide6.QtGui import QImage
         from PySide6.QtWidgets import QApplication
         from pypdf import PdfReader, PdfWriter
-        from pdfpick import __version__
-        from pdfpick.app import load_app_icon
-        from pdfpick.core import DocumentSelection, export_selected_pages, export_documents, split_documents
-        from pdfpick.renderer import start_render_backend
-        from pdfpick.preferences import LanguageController
-        from pdfpick.strings import tr
-        from pdfpick.theme import ThemeController
+        from repdf import __version__
+        from repdf.app import load_app_icon
+        from repdf.core import DocumentSelection, export_selected_pages, export_documents, split_documents
+        from repdf.renderer import start_render_backend
+        from repdf.preferences import LanguageController
+        from repdf.strings import tr
+        from repdf.theme import ThemeController
         app = QApplication([])
         language = LanguageController("zh")
         if language.qt_translator.isEmpty():
@@ -35,7 +35,7 @@ def main(report_path: str) -> int:
         language.close()
         if load_app_icon().isNull():
             raise RuntimeError("Application icon is missing")
-        with tempfile.TemporaryDirectory(prefix="pdfpick-smoke-") as directory:
+        with tempfile.TemporaryDirectory(prefix="repdf-smoke-") as directory:
             root = Path(directory)
             source = root / "source.pdf"
             writer = PdfWriter()

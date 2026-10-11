@@ -6,9 +6,9 @@ from PyInstaller.utils.hooks import collect_all, copy_metadata
 
 root = Path(SPECPATH).parent
 version = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
-data = [(str(root / "src/pdfpick/assets"), "pdfpick/assets")]
-data += [(str(Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)) / "qtbase_zh_TW.qm"), "pdfpick/assets")]
-data += copy_metadata("pdfpick")
+data = [(str(root / "src/repdf/assets"), "repdf/assets")]
+data += [(str(Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)) / "qtbase_zh_TW.qm"), "repdf/assets")]
+data += copy_metadata("repdf")
 binaries = []
 hiddenimports = []
 for package in ("pypdfium2", "pypdfium2_raw"):
@@ -25,16 +25,16 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 if sys.platform == "darwin":
-    exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="PDFPick",
+    exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="repdf",
               console=False, upx=False, argv_emulation=False)
-    coll = COLLECT(exe, a.binaries, a.datas, name="PDFPick", upx=False)
-    app = BUNDLE(coll, name="PDFPick.app",
-                 icon=str(root / "output/desktop/PDFPick.icns"),
-                 bundle_identifier="io.github.meeinoffice.pdfpick",
+    coll = COLLECT(exe, a.binaries, a.datas, name="repdf", upx=False)
+    app = BUNDLE(coll, name="repdf.app",
+                 icon=str(root / "output/desktop/repdf.icns"),
+                 bundle_identifier="io.github.codemee.repdf",
                  version=version,
                  info_plist={"CFBundleShortVersionString": version,
                              "NSHighResolutionCapable": True})
 else:
-    exe = EXE(pyz, a.scripts, a.binaries, a.datas, name="PDFPick",
+    exe = EXE(pyz, a.scripts, a.binaries, a.datas, name="repdf",
               console=False, upx=False,
-              icon=str(root / "src/pdfpick/assets/pdfpick.ico"))
+              icon=str(root / "src/repdf/assets/repdf.ico"))
