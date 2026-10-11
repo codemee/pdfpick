@@ -4,7 +4,29 @@
 
 ## 安裝與啟動
 
-需要 Python 3.11 以上版本及 [uv](https://docs.astral.sh/uv/)。
+### 1. 下載發布的執行檔／App（建議）
+
+從 [GitHub Releases](https://github.com/codemee/pdfpick/releases/latest) 下載適合平台的檔案，不需要安裝 Python 或 uv：
+
+- **Windows x86_64**：下載 `PDFPick-<版本>-windows-x86_64.exe`，直接執行。
+- **macOS Apple Silicon（arm64）**：下載 `PDFPick-<版本>-macos-arm64.dmg`，開啟後將 `PDFPick.app` 拖入 Applications，再從 Applications 啟動。
+
+Release 同時提供 SHA256 校驗檔。簽章與打包資訊見下方「Windows 執行檔與 macOS App／DMG」。
+
+### 2. 使用 uv tool 安裝
+
+已有 [uv](https://docs.astral.sh/uv/) 時，可從 Release 的 wheel 安裝到獨立工具環境。以下以 `v0.0.7` 為例：
+
+```powershell
+uv tool install "https://github.com/codemee/pdfpick/releases/download/v0.0.7/pdfpick-0.0.7-py3-none-any.whl"
+pdfpick
+```
+
+需要 Python 3.11 以上版本；uv 可在需要時下載適用的 Python。安裝其他版本時，請將網址中的版本號替換成該 Release 的版本。若終端機找不到 `pdfpick`，執行 `uv tool update-shell` 後重新開啟終端機。
+
+### 3. 從原始碼使用 uv run
+
+適合開發或修改程式。下載原始碼，或 clone 本儲存庫後，進入專案目錄執行：
 
 ```powershell
 uv sync
@@ -13,14 +35,26 @@ uv run pdfpick
 
 ## 操作方式
 
-1. 按工具列「開啟 PDF」（Ctrl+O），一次選取多個 PDF，或從檔案總管拖入多個 PDF。各檔案以主檔名顯示在標籤頁，完整路徑顯示於目前標籤的視窗標題列與標籤 tooltip。同一路徑再次開啟會切換到既有標籤。
-2. 拖曳頁面縮圖或「拖曳排序」把手時，頁面縮圖會跟隨游標，其他頁面以動畫移開並顯示插入空位。移到頁面左半部可插入其前方，右半部可插入其後方；放開確認排序，按 Esc 取消。
-3. 點選各頁左上角的核取方塊，或使用「單數頁」「雙數頁」批次選取；單雙數依原始頁碼計算，只影響目前標籤。
-4. 使用工具列滑桿調整 25%–200% 預覽比例，固定寬度的比例顯示位於滑桿左側。Ctrl++（或 Ctrl+=）放大、Ctrl+- 縮小，每次調整 25 個百分點；點擊比例或按 Ctrl+0 回到 100%。各檔案獨立保留比例、捲動位置、選頁與頁面排序；完整操作說明可查看比例的 tooltip。100% 對應 Windows 的 96 DPI 顯示尺度。
-5. 按工具列「輸出選取頁面」（Ctrl+S 或 Ctrl+Shift+S）並指定新 PDF 的儲存位置。
-6. 若要逐頁存檔，按工具列「拆分選取頁面」圖示，同樣指定儲存位置與基本檔名。程式依畫面順序將已選頁面存為獨立 PDF，例如指定 `report.pdf`，會輸出 `report_01.pdf`、`report_02.pdf`。序號從 1 開始，至少兩位，依本次輸出總數補零對齊（100 頁使用 `001`–`100`），與原始頁碼無關。已存在的單頁檔案會先詢問是否覆蓋。
+工具列按鈕的圖示與用途如下；將游標停在按鈕上也可查看 tooltip。
 
-標籤左侧核取方塊預設不勾選。有勾選標籤時，只輸出勾選檔案的已選頁面；沒有勾選任何標籤時，只輸出目前標籤的已選頁面。勾選檔案沒有選頁時不提供輸出頁面，不會自動改選目前檔案。拖曳標籤可調整檔案順序，輸出先依標籤順序，再依各檔內的頁面排序；拆分序號跨檔連續。按標籤右側的 × 可關閉檔案。
+| 工具列圖示／控制元件 | 功能 | 操作說明 | 快捷鍵 |
+| --- | --- | --- | --- |
+| <img src="docs/images/toolbar-open.png" width="24" alt="開啟 PDF 圖示"> | 開啟 PDF | 一次選取多個 PDF，也可從檔案總管拖入。 | Ctrl+O |
+| <img src="docs/images/toolbar-export.png" width="24" alt="重組輸出圖示"> | 重組輸出 | 將選取頁面依目前順序合併為一個新 PDF，指定檔名與儲存位置。 | Ctrl+S／Ctrl+Shift+S |
+| <img src="docs/images/toolbar-split.png" width="24" alt="拆分輸出圖示"> | 拆分輸出 | 將選取頁面依目前順序逐頁存成獨立 PDF，指定基本檔名與儲存位置。 | — |
+| <img src="docs/images/toolbar-odd.png" height="22" alt="單數頁核取方塊"> | 單數頁 | 選取或取消目前標籤的原始單數頁；部分選取時顯示三態標記。 | — |
+| <img src="docs/images/toolbar-even.png" height="22" alt="雙數頁核取方塊"> | 雙數頁 | 選取或取消目前標籤的原始雙數頁；部分選取時顯示三態標記。 | — |
+| <img src="docs/images/toolbar-zoom.png" width="160" alt="顯示比例與縮放滑桿"> | 顯示比例 | 滑桿調整 25%–200%；點擊比例回到 100%。鍵盤縮放每次調整 25 個百分點，完整說明在比例的 tooltip。 | 放大：Ctrl++／Ctrl+=；縮小：Ctrl+-；100%：Ctrl+0 |
+| <img src="docs/images/toolbar-language-system.png" width="24" alt="跟隨系統語言"> <img src="docs/images/toolbar-language-zh.png" width="24" alt="繁體中文"> <img src="docs/images/toolbar-language-en.png" width="24" alt="English"> | 介面語言 | 點擊依序切換「跟隨系統 → 繁體中文 → English」，選擇會記住。 | — |
+| <img src="docs/images/toolbar-theme-system.png" width="24" alt="跟隨系統配色：太陽與月亮"> <img src="docs/images/toolbar-theme-light.png" width="24" alt="淺色：太陽"> <img src="docs/images/toolbar-theme-dark.png" width="24" alt="深色：月亮"> | 介面配色 | 點擊依序切換「跟隨系統 → 淺色 → 深色」，選擇會記住。 | — |
+
+各檔案以主檔名顯示在標籤頁，完整路徑顯示於目前標籤的視窗標題列與標籤 tooltip。同一路徑再次開啟會切換到既有標籤。各檔案獨立保留比例、捲動位置、選頁與頁面排序；100% 對應 Windows 的 96 DPI 顯示尺度。
+
+點選各頁左上角的核取方塊可個別選頁。拖曳頁面縮圖或「拖曳排序」把手時，縮圖會跟隨游標，其他頁面以動畫移開並顯示插入空位。移到頁面左半部可插入其前方，右半部可插入其後方；放開確認排序，按 Esc 取消。
+
+拆分時，例如指定 `report.pdf`，會輸出 `report_01.pdf`、`report_02.pdf`。序號從 1 開始，至少兩位，依本次輸出總數補零對齊（100 頁使用 `001`–`100`），與原始頁碼無關。已存在的單頁檔案會先詢問是否覆蓋。
+
+標籤左側核取方塊預設不勾選。有勾選標籤時，只輸出勾選檔案的已選頁面；沒有勾選任何標籤時，只輸出目前標籤的已選頁面。勾選檔案沒有選頁時不提供輸出頁面，不會自動改選目前檔案。拖曳標籤可調整檔案順序，輸出先依標籤順序，再依各檔內的頁面排序；拆分序號跨檔連續。按標籤右側的 × 可關閉檔案。
 
 密碼保護的 PDF 暫不支援。輸出頁面依畫面排列順序；未勾選的頁面不會輸出。
 
