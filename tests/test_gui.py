@@ -1,5 +1,4 @@
 from pathlib import Path
-import sys
 
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QImage, QKeySequence
@@ -118,8 +117,8 @@ def test_platform_close_shortcut_closes_only_current_tab(qtbot, monkeypatch, tmp
     window._set_export_running(True)
     assert not window.close_tab_action.isEnabled()
     window._set_export_running(False)
-    modifier = Qt.KeyboardModifier.MetaModifier if sys.platform == "darwin" else Qt.KeyboardModifier.ControlModifier
-    qtbot.keyClick(window, Qt.Key.Key_W, modifier)
+    # Qt maps Command on macOS to ControlModifier as used by StandardKey.Close.
+    qtbot.keyClick(window, Qt.Key.Key_W, Qt.KeyboardModifier.ControlModifier)
     assert window.ordered_documents() == [first, third]
     assert first.selected_pages == {0}
     assert window.current_document() is third
