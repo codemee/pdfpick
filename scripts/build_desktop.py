@@ -39,7 +39,7 @@ def main() -> None:
     run(sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
         "--distpath", str(OUT / "dist"), "--workpath", str(OUT / "build"),
         str(ROOT / "packaging/repdf.spec"), env=build_env)
-    executable = (OUT / "dist/repdf.app/Contents/MacOS/repdf"
+    executable = (OUT / "dist/RePDF.app/Contents/MacOS/repdf"
                   if sys.platform == "darwin" else OUT / "dist/repdf.exe")
     report = OUT / "smoke-report.json"
     report.unlink(missing_ok=True)
@@ -58,9 +58,9 @@ def main() -> None:
     if sys.platform == "darwin":
         with tempfile.TemporaryDirectory(prefix="dmg-", dir=OUT) as staging:
             stage = Path(staging)
-            run("ditto", str(OUT / "dist/repdf.app"), str(stage / "repdf.app"))
+            run("ditto", str(OUT / "dist/RePDF.app"), str(stage / "RePDF.app"))
             (stage / "Applications").symlink_to("/Applications", target_is_directory=True)
-            run("hdiutil", "create", "-volname", f"repdf {version}", "-srcfolder",
+            run("hdiutil", "create", "-volname", f"RePDF {version}", "-srcfolder",
                 str(stage), "-format", "UDZO", "-ov", str(artifact))
         run("hdiutil", "verify", str(artifact))
     else:

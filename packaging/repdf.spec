@@ -28,11 +28,13 @@ if sys.platform == "darwin":
     exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="repdf",
               console=False, upx=False, argv_emulation=False)
     coll = COLLECT(exe, a.binaries, a.datas, name="repdf", upx=False)
-    app = BUNDLE(coll, name="repdf.app",
+    app = BUNDLE(coll, name="RePDF.app",
                  icon=str(root / "output/desktop/repdf.icns"),
                  bundle_identifier="io.github.codemee.repdf",
                  version=version,
                  info_plist={"CFBundleShortVersionString": version,
+                             "CFBundleName": "RePDF",
+                             "CFBundleDisplayName": "RePDF",
                              "NSHighResolutionCapable": True})
 else:
     exe = EXE(pyz, a.scripts, a.binaries, a.datas, name="repdf",

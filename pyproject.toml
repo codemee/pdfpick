@@ -1,7 +1,7 @@
 [project]
 name = "repdf"
 version = "0.0.8"
-description = "Select and recombine pages from a PDF with a desktop GUI."
+description = "RePDF (Rearrange PDF): select, reorder, merge and split PDF pages with a desktop GUI."
 readme = "README.md"
 requires-python = ">=3.11"
 

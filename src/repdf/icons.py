@@ -52,6 +52,27 @@ def toolbar_icon(kind: str) -> QIcon:
             path.cubicTo(17, 22, 21, 18, 21, 14)
             path.cubicTo(10, 18, 6, 9, 11, 3)
             painter.drawPath(path)
+        elif kind == "fit":
+            for points in (((3, 8), (3, 3), (8, 3)), ((16, 3), (21, 3), (21, 8)),
+                           ((21, 16), (21, 21), (16, 21)), ((8, 21), (3, 21), (3, 16))):
+                painter.drawPolyline(QPolygonF([QPointF(x, y) for x, y in points]))
+            painter.drawRect(QRectF(8, 6, 8, 12))
+        elif kind in ("fullscreen", "fullscreen_spread", "fullscreen_cover"):
+            if kind == "fullscreen":
+                painter.drawRect(QRectF(5, 2, 14, 20))
+                painter.drawLine(8, 11, 16, 11)
+                painter.drawLine(8, 15, 16, 15)
+            elif kind == "fullscreen_spread":
+                painter.drawRect(QRectF(3, 4, 18, 17))
+                painter.drawLine(12, 4, 12, 21)
+                painter.drawLine(5, 12, 9, 12)
+                painter.drawLine(15, 12, 19, 12)
+            else:
+                painter.drawRect(QRectF(1, 2, 10, 19))
+                painter.drawLine(4, 11, 8, 11)
+                # A separate cover beside two pages sharing their center edge.
+                painter.drawRect(QRectF(13, 8, 10, 13))
+                painter.drawLine(18, 8, 18, 21)
         elif kind == "open":
             painter.drawPolyline(QPolygonF([QPointF(3, 19), QPointF(3, 5), QPointF(9, 5),
                                             QPointF(12, 8), QPointF(20, 8), QPointF(20, 10)]))

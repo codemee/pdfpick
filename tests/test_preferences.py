@@ -6,6 +6,7 @@ from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QApplication
 
 from repdf.app import DocumentView, MainWindow
+from repdf import __version__
 from repdf.core import export_documents
 from repdf.preferences import migrate_preferences, system_language
 from repdf.strings import localize_text
@@ -33,12 +34,13 @@ def test_language_cycle_retranslates_existing_pages_without_changing_state(qtbot
     assert "Include this file" in doc.include_checkbox.toolTip()
     assert doc.page_order == [2, 0, 1] and doc.selected_pages == {2} and doc.zoom == 75
     assert window.tabs.tabText(0) == "單數頁"
-    assert str(doc.source_path) in window.windowTitle()
-    assert "repdf" in window.windowTitle()
+    assert window.windowTitle() == f"RePDF {__version__}"
+    assert window.tabs.tabToolTip(0) == str(doc.source_path)
     with pytest.raises(ValueError, match="Select at least one page"):
         export_documents([], tmp_path / "out.pdf")
     window.language_action.trigger()
     assert window.language_controller.mode == "system"
+    assert window.windowTitle() == f"RePDF {__version__}"
     assert window.odd_checkbox.text() == "單數頁"
     assert doc.page_cards[0].checkbox.text() == "第 1 頁"
 

@@ -125,6 +125,7 @@ class PageGrid(QWidget):
 
 class DragLabel(QLabel):
     drag_requested = Signal()
+    pressed = Signal()
 
     def __init__(self, text: str) -> None:
         super().__init__(text)
@@ -134,6 +135,7 @@ class DragLabel(QLabel):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
+            self.pressed.emit()
             self._press_position = event.position().toPoint()
         super().mousePressEvent(event)
 
@@ -155,6 +157,7 @@ class DragLabel(QLabel):
 
 
 class PageCard(QFrame):
+    focused = Signal(int)
     selection_changed = Signal(int, bool)
     reorder_requested = Signal(int, int)
     DRAG_MIME_TYPE = "application/x-repdf-page"
@@ -180,6 +183,9 @@ class PageCard(QFrame):
         header.addWidget(self.drag_handle)
 
         self.preview = DragLabel(tr('載入中…'))
+        self.preview.pressed.connect(lambda: self.focused.emit(self.page_index))
+        self.drag_handle.pressed.connect(lambda: self.focused.emit(self.page_index))
+        self.checkbox.clicked.connect(lambda: self.focused.emit(self.page_index))
         self.preview.drag_requested.connect(self._start_drag)
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setMinimumHeight(max(80, int(target_width * 1.3)))

@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 from pypdf import PdfReader, PdfWriter
 
 from repdf.app import DocumentView, MainWindow, load_app_icon
+from repdf import __version__
 
 
 def ready_document(window, path, count, *, zoom=100):
@@ -201,7 +202,8 @@ def test_pdf_loads_and_renders_page_previews(qtbot, tmp_path: Path) -> None:
         lambda: all(not card.preview.pixmap().isNull() for card in doc.page_cards),
         timeout=10_000,
     )
-    assert str(source.resolve()) in window.windowTitle()
+    assert window.windowTitle() == f"RePDF {__version__}"
+    assert window.tabs.tabToolTip(0) == str(source.resolve())
     assert doc.page_cards[0].preview.pixmap().width() == 400
 
 
@@ -281,7 +283,8 @@ def test_tabs_keep_independent_state_and_output_scope(qtbot, monkeypatch, tmp_pa
     assert b.selected_pages == {0, 2}
     assert window.tabs.tabText(0) == "a"
     assert window.tabs.tabText(1) == "b"
-    assert str(b.source_path) in window.windowTitle()
+    assert window.windowTitle() == f"RePDF {__version__}"
+    assert window.tabs.tabToolTip(1) == str(b.source_path)
     assert not a.include_checkbox.isChecked()
     assert not b.include_checkbox.isChecked()
     assert [item.source for item in window.output_selection()] == [b.source_path]

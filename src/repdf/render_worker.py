@@ -12,12 +12,17 @@ import pypdfium2 as pdfium
 def render_document(
     source: Path, scale: float, output_dir: Path, generation: int,
     output_stream: TextIO | None = None,
+    pages: list[int] | None = None,
 ) -> None:
     document = pdfium.PdfDocument(str(source))
     try:
-        for page_index in range(len(document)):
+        indices = range(len(document)) if pages is None else pages
+        for page_index in indices:
+            if not isinstance(page_index, int) or not 0 <= page_index < len(document):
+                raise ValueError("Invalid preview page index")
             page = document[page_index]
             try:
+                width_points, height_points = page.get_size()
                 bitmap = page.render(scale=max(scale, 0.1))
                 try:
                     image = bitmap.to_pil().convert("RGB")
@@ -30,6 +35,7 @@ def render_document(
             print(json.dumps({
                 "type": "page", "generation": generation,
                 "page": page_index, "path": str(output),
+                "width_points": width_points, "height_points": height_points,
             }), file=output_stream, flush=True)
     finally:
         document.close()
@@ -53,6 +59,7 @@ def serve(
             render_document(
                 Path(request["source"]), float(request["scale"]),
                 Path(request["output_dir"]), int(request["generation"]), output_stream,
+                pages=request.get("pages"),
             )
             print(json.dumps({
                 "type": "done", "generation": int(request["generation"]),

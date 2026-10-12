@@ -5,6 +5,15 @@ from string import Formatter
 
 LANGUAGE = "zh"
 ENGLISH = {
+    "全螢幕單頁": "Fullscreen single page",
+    "全螢幕對頁": "Fullscreen facing pages",
+    "全螢幕封面＋對頁": "Fullscreen cover and facing pages",
+    "全螢幕單頁（F11）；Esc 結束，方向鍵／Page Up／Page Down 切頁，可勾選頁面": "Fullscreen single page (F11); Esc to exit, arrows / Page Up / Page Down to navigate; check pages to select",
+    "全螢幕對頁：依目前順序兩頁並排；Esc 結束，方向鍵／Page Up／Page Down 切頁，可勾選頁面": "Fullscreen facing pages: two pages in current order; Esc to exit, arrows / Page Up / Page Down to navigate; check pages to select",
+    "全螢幕封面＋對頁：第一頁單獨顯示，其餘兩頁並排；Esc 結束，方向鍵／Page Up／Page Down 切頁，可勾選頁面": "Fullscreen cover and facing pages: first page alone, then pairs; Esc to exit, arrows / Page Up / Page Down to navigate; check pages to select",
+    "Fit：將目前單頁等比例縮放至預覽區，視窗調整時自動適應": "Fit: scale the current page to fit the preview area; adapt when the window is resized",
+    "全螢幕預覽": "Fullscreen preview",
+    "全螢幕單頁預覽（F11）；Esc 結束，左右方向鍵切換頁面": "Fullscreen page preview (F11); Esc to exit, arrow keys to change pages",
     "勾選此檔案以加入重組或拆分；未勾選任何標籤時僅輸出目前檔案": "Include this file in merge or split; if no tabs are checked, use only the current file",
     "關閉此檔案": "Close this file",
     "正在讀取 PDF…": "Reading PDF…",
@@ -34,7 +43,6 @@ ENGLISH = {
     "放大": "Zoom in",
     "放大（Ctrl++ / Ctrl+=）": "Zoom in (Ctrl++ / Ctrl+=)",
     "頁面顯示比例：25%–200%\n拖曳右側滑桿調整比例。\n放大：Ctrl++ 或 Ctrl+=（每次增加 25 個百分點）\n縮小：Ctrl+-（每次減少 25 個百分點）\n回到 100%：點擊比例或按 Ctrl+0\n100% 以 96 DPI 顯示 PDF 頁面。": "Page zoom: 25%–200%\nDrag the slider on the right to adjust zoom.\nZoom in: Ctrl++ or Ctrl+= (25 percentage points per step)\nZoom out: Ctrl+- (25 percentage points per step)\nReset to 100%: click the percentage or press Ctrl+0\n100% displays PDF pages at 96 DPI.",
-    "repdf — PDF 選頁重組工具 {p0} 版": "repdf {p0}",
     "目前檔案：已選取 {p0} / {p1} 頁；輸出合計 {p2} 頁": "Current file: {p0} / {p1} pages selected; {p2} pages in output",
     "PDF 檔案 (*.pdf)": "PDF files (*.pdf)",
     "部分 PDF 無法開啟": "Some PDFs could not be opened",
@@ -50,7 +58,6 @@ ENGLISH = {
     "已輸出 {p0} 頁至：\n{p1}": "Exported {p0} pages to:\n{p1}",
     "輸出完成": "Export complete",
     "輸出失敗": "Export failed",
-    "repdf — PDF 選頁重組工具": "repdf",
     "拖曳到另一頁可調整順序": "Drag to another page to change the order",
     "第 {p0} 頁": "Page {p0}",
     "☰ 拖曳排序": "☰ Reorder",

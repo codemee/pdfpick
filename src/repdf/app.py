@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QAbstractButton,
+    QAbstractSlider,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
@@ -55,6 +56,7 @@ from repdf.theme import ThemeController
 from repdf.preferences import LanguageController, migrate_preferences
 from repdf.renderer import RenderService, start_render_backend
 from repdf.widgets import PageCard, PageGrid
+from repdf.preview import FullscreenPreview
 from repdf.workers import ExportPdfTask, LoadPdfTask
 
 
@@ -73,6 +75,11 @@ class DocumentView(QWidget):
         self.page_order = []
         self.page_cards = []
         self.zoom = 100
+        self.fit_mode = False
+        self.fit_page_index = 0
+        self._fit_navigation_pending = False
+        self.focused_page = None
+        self.page_sizes = {}
         self.ready = False
         self.render_generation = -1
         self._render_received = set()
@@ -91,6 +98,9 @@ class DocumentView(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
+        horizontal = self.scroll_area.horizontalScrollBar()
+        horizontal.rangeChanged.connect(lambda minimum, maximum:
+                                        horizontal.setValue((minimum + maximum) // 2))
         self.scroll_area.viewport().installEventFilter(self)
         self.grid_host = PageGrid()
         self.grid_host.insertion_requested.connect(self._insert_page)
@@ -98,7 +108,7 @@ class DocumentView(QWidget):
         self.grid = QGridLayout(self.grid_host)
         self.grid.setContentsMargins(12, 12, 12, 12)
         self.grid.setSpacing(12)
-        self.grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
         self.empty_label = QLabel(tr('正在讀取 PDF…'))
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.grid.addWidget(self.empty_label, 0, 0)
@@ -108,6 +118,10 @@ class DocumentView(QWidget):
         self.render_timer.setSingleShot(True)
         self.render_timer.setInterval(250)
         self.render_timer.timeout.connect(self._queue_all_renders)
+        self.fit_timer = QTimer(self)
+        self.fit_timer.setSingleShot(True)
+        self.fit_timer.setInterval(150)
+        self.fit_timer.timeout.connect(self._apply_fit)
 
     def loaded(self, page_count: int) -> None:
         self.page_count = page_count
@@ -122,6 +136,8 @@ class DocumentView(QWidget):
     def eventFilter(self, watched, event) -> bool:
         if watched is self.scroll_area.viewport() and event.type() == QEvent.Type.Resize:
             QTimer.singleShot(0, self._reflow_grid)
+            if self.fit_mode:
+                self.fit_timer.start()
         return super().eventFilter(watched, event)
 
     def show_status(self, message: str) -> None:
@@ -135,6 +151,7 @@ class DocumentView(QWidget):
             card = PageCard(page_index, width)
             card.selection_changed.connect(self._page_selection_changed)
             card.reorder_requested.connect(self._move_page)
+            card.focused.connect(self._focus_page)
             self.page_cards.append(card)
         self._reflow_grid()
 
@@ -157,9 +174,12 @@ class DocumentView(QWidget):
         card_width = max(card.width() for card in self.page_cards)
         available = max(1, self.scroll_area.viewport().width() - 24)
         columns = max(1, (available + self.grid.spacing()) // (card_width + self.grid.spacing()))
+        if self.fit_mode:
+            columns = 1
         for position, page_index in enumerate(self.page_order):
             card = self.page_cards[page_index]
-            self.grid.addWidget(card, position // columns, position % columns)
+            self.grid.addWidget(card, position // columns, position % columns,
+                                Qt.AlignmentFlag.AlignHCenter)
         self.grid.activate()
 
     @Slot(int, int)
@@ -213,11 +233,69 @@ class DocumentView(QWidget):
         self.owner._sync_controls()
 
     def set_zoom(self, value: int) -> None:
+        was_fit = self.fit_mode
+        self.fit_mode = False
+        self._fit_navigation_pending = False
+        self.fit_timer.stop()
+        if was_fit:
+            self._reflow_grid()
         if self.zoom == value:
             return
         self.zoom = value
         if self.page_cards:
             self.render_timer.start()
+
+    def _focus_page(self, page_index: int) -> None:
+        self.focused_page = page_index
+
+    def preview_page_index(self, *, prefer_focused=True) -> int:
+        visible = self.scroll_area.viewport().rect().translated(
+            self.scroll_area.horizontalScrollBar().value(), self.scroll_area.verticalScrollBar().value())
+        if prefer_focused and self.focused_page is not None and self.page_cards[self.focused_page].geometry().intersects(visible):
+            return self.focused_page
+        return min(self.page_order, key=lambda index:
+                   (self.page_cards[index].geometry().center() - visible.center()).manhattanLength())
+
+    def fit_page(self) -> None:
+        index = self.preview_page_index()
+        if index not in self.page_sizes:
+            return
+        self.fit_page_index = index
+        self.fit_mode = True
+        self._apply_fit()
+
+    def _apply_fit(self) -> None:
+        if not self.fit_mode or self.owner._closing:
+            return
+        card = self.page_cards[self.fit_page_index]
+        points = self.page_sizes.get(self.fit_page_index)
+        if points is None:
+            return
+        width, height = points
+        margins = self.grid.contentsMargins()
+        chrome = max(0, card.sizeHint().height() - card.preview.height())
+        available_width = max(1, self.scroll_area.viewport().width() - margins.left() - margins.right() - 26)
+        # Grid margins surround the entire document, not each fitted page.
+        # Fit the card to the viewport and scroll it into alignment separately.
+        available_height = max(1, self.scroll_area.viewport().height() - chrome - 2)
+        zoom = round(min(available_width / width, available_height / height) * self.PDF_DPI / self.SCREEN_DPI * 100, 2)
+        if abs(zoom - self.zoom) > 0.05:
+            self.zoom = zoom
+            self.render_timer.start()
+        self._reflow_grid()
+        self.owner._sync_controls()
+        QTimer.singleShot(0, self._scroll_to_fit_page)
+
+    def _scroll_to_fit_page(self) -> None:
+        if not self.fit_mode or self.owner._closing:
+            return
+        card = self.page_cards[self.fit_page_index]
+        viewport = self.scroll_area.viewport()
+        self.scroll_area.verticalScrollBar().setValue(
+            card.y() + (card.height() - viewport.height()) // 2)
+        self.scroll_area.horizontalScrollBar().setValue(
+            card.x() + (card.width() - viewport.width()) // 2)
+        self._fit_navigation_pending = False
 
     @Slot()
     def _queue_all_renders(self) -> None:
@@ -283,8 +361,14 @@ class DocumentView(QWidget):
             return
         image = QImage(str(image_path)).copy()
         if 0 <= page_index < len(self.page_cards) and not image.isNull():
+            self.page_sizes[page_index] = (
+                float(payload.get("width_points", image.width() / self._preview_scale())),
+                float(payload.get("height_points", image.height() / self._preview_scale())),
+            )
             self.page_cards[page_index].set_image(image)
             self._reflow_grid()
+            if self.fit_mode and page_index == self.fit_page_index:
+                self.fit_timer.start()
         elif 0 <= page_index < len(self.page_cards):
             self.page_cards[page_index].set_render_error()
         image_path.unlink(missing_ok=True)
@@ -295,6 +379,9 @@ class DocumentView(QWidget):
             self.show_status(
                 tr('已載入 {p0} 頁；已選取 {p1} 頁', p0=self.page_count, p1=len(self.selected_pages))
             )
+        self.owner._sync_controls()
+        if self.fit_mode and page_index == self.fit_page_index:
+            QTimer.singleShot(0, self._scroll_to_fit_page)
 
     def _reset_render_state(self) -> None:
         self._render_received.clear()
@@ -330,6 +417,7 @@ class MainWindow(QMainWindow):
         self._export_id = 0
         self._syncing_bulk = False
         self._closing = False
+        self._fullscreen_preview = None
         self._build_toolbar()
         central = QWidget()
         root = QVBoxLayout(central)
@@ -352,6 +440,42 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(tr('就緒'))
         self.language_controller.changed.connect(self._retranslate)
         self._update_preference_actions()
+
+        QApplication.instance().installEventFilter(self)
+
+    def eventFilter(self, watched, event) -> bool:
+        keys = (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down,
+                Qt.Key.Key_PageUp, Qt.Key.Key_PageDown)
+        if (not self._closing and isinstance(watched, QWidget) and watched.window() is self
+                and event.type() == QEvent.Type.KeyPress and not event.modifiers()
+                and event.key() in keys):
+            self._navigate_preview(event.key())
+            return True
+        return super().eventFilter(watched, event)
+
+    def _navigate_preview(self, key) -> None:
+        doc = self.current_document()
+        if doc is None or not doc.ready:
+            return
+        previous = key in (Qt.Key.Key_Left, Qt.Key.Key_Up, Qt.Key.Key_PageUp)
+        if doc.fit_mode:
+            pending = doc._fit_navigation_pending or doc.render_timer.isActive() or doc._render_pending > 0
+            current = doc.fit_page_index if pending else doc.preview_page_index(prefer_focused=False)
+            doc.fit_page_index = current
+            doc.focused_page = current
+            position = doc.page_order.index(current) + (-1 if previous else 1)
+            if 0 <= position < len(doc.page_order):
+                doc.fit_page_index = doc.page_order[position]
+                doc.focused_page = doc.fit_page_index
+                doc._fit_navigation_pending = True
+                doc._apply_fit()
+            return
+        horizontal = key in (Qt.Key.Key_Left, Qt.Key.Key_Right)
+        scrollbar = doc.scroll_area.horizontalScrollBar() if horizontal else doc.scroll_area.verticalScrollBar()
+        paging = key in (Qt.Key.Key_PageUp, Qt.Key.Key_PageDown)
+        action = (QAbstractSlider.SliderAction.SliderPageStepSub if previous else QAbstractSlider.SliderAction.SliderPageStepAdd) if paging else (
+            QAbstractSlider.SliderAction.SliderSingleStepSub if previous else QAbstractSlider.SliderAction.SliderSingleStepAdd)
+        scrollbar.triggerAction(action)
 
     def _build_toolbar(self) -> None:
         self.toolbar = QToolBar(tr('檔案與顯示'), self)
@@ -422,7 +546,7 @@ class MainWindow(QMainWindow):
         self.zoom_reset_action.setToolTip(
             tr('頁面顯示比例：25%–200%\n拖曳右側滑桿調整比例。\n放大：Ctrl++ 或 Ctrl+=（每次增加 25 個百分點）\n縮小：Ctrl+-（每次減少 25 個百分點）\n回到 100%：點擊比例或按 Ctrl+0\n100% 以 96 DPI 顯示 PDF 頁面。')
         )
-        self.zoom_reset_action.triggered.connect(lambda: self.zoom_slider.setValue(100))
+        self.zoom_reset_action.triggered.connect(lambda: self._set_manual_zoom(100))
         self.toolbar.addAction(self.zoom_reset_action)
         self.zoom_display = self.toolbar.widgetForAction(self.zoom_reset_action)
         self.zoom_display.setFixedWidth(64)
@@ -430,6 +554,24 @@ class MainWindow(QMainWindow):
             Qt.ToolButtonStyle.ToolButtonTextOnly
         )
         self.toolbar.addWidget(self.zoom_slider)
+        self.fit_action = QAction("Fit", self)
+        self.fit_action.setCheckable(True)
+        self.fit_action.setToolTip(tr("Fit：將目前單頁等比例縮放至預覽區，視窗調整時自動適應"))
+        self.fit_action.triggered.connect(self._fit_page)
+        self.toolbar.addAction(self.fit_action)
+        self.fullscreen_action = QAction(tr("全螢幕單頁"), self)
+        self.fullscreen_action.setShortcut(QKeySequence("F11"))
+        self.fullscreen_action.setToolTip(tr("全螢幕單頁（F11）；Esc 結束，方向鍵／Page Up／Page Down 切頁，可勾選頁面"))
+        self.fullscreen_action.triggered.connect(lambda: self._show_fullscreen_preview("single"))
+        self.toolbar.addAction(self.fullscreen_action)
+        self.spread_action = QAction(tr("全螢幕對頁"), self)
+        self.spread_action.setToolTip(tr("全螢幕對頁：依目前順序兩頁並排；Esc 結束，方向鍵／Page Up／Page Down 切頁，可勾選頁面"))
+        self.spread_action.triggered.connect(lambda: self._show_fullscreen_preview("spread"))
+        self.toolbar.addAction(self.spread_action)
+        self.cover_action = QAction(tr("全螢幕封面＋對頁"), self)
+        self.cover_action.setToolTip(tr("全螢幕封面＋對頁：第一頁單獨顯示，其餘兩頁並排；Esc 結束，方向鍵／Page Up／Page Down 切頁，可勾選頁面"))
+        self.cover_action.triggered.connect(lambda: self._show_fullscreen_preview("cover"))
+        self.toolbar.addAction(self.cover_action)
         self.toolbar.addSeparator()
         self.language_action = QAction(self)
         self.language_action.triggered.connect(self._cycle_language)
@@ -441,7 +583,10 @@ class MainWindow(QMainWindow):
 
     def _refresh_toolbar_icons(self) -> None:
         for action, kind in ((self.open_action, "open"), (self.export_action, "export"),
-                             (self.split_action, "split")):
+                             (self.split_action, "split"), (self.fit_action, "fit"),
+                             (self.fullscreen_action, "fullscreen"),
+                             (self.spread_action, "fullscreen_spread"),
+                             (self.cover_action, "fullscreen_cover")):
             action.setIcon(toolbar_icon(kind))
         if hasattr(self, "language_action"):
             self._update_preference_actions()
@@ -485,8 +630,7 @@ class MainWindow(QMainWindow):
             if isinstance(widget, QWidget):
                 widget.setAccessibleName(localize_text(widget.accessibleName()))
         self.toolbar.setWindowTitle(localize_text(self.toolbar.windowTitle()))
-        doc = self.current_document()
-        self._update_window_title(doc.source_path if doc is not None else None)
+        self._update_window_title()
         self._sync_controls()
         self.statusBar().showMessage(status)
         self._update_preference_actions()
@@ -499,12 +643,37 @@ class MainWindow(QMainWindow):
             if self.language_controller.mode == "system":
                 self.language_controller.refresh()
 
-    def _update_window_title(self, path: Path | None = None) -> None:
-        title = tr('repdf — PDF 選頁重組工具 {p0} 版', p0=__version__)
-        self.setWindowTitle(f"{path.resolve()} — {title}" if path is not None else title)
+    def _update_window_title(self) -> None:
+        self.setWindowTitle(f"RePDF {__version__}")
 
     def _adjust_zoom(self, delta: int) -> None:
-        self.zoom_slider.setValue(self.zoom_slider.value() + delta)
+        doc = self.current_document()
+        value = doc.zoom if doc is not None else self.zoom_slider.value()
+        self._set_manual_zoom(max(25, min(200, round(value + delta))))
+
+    def _set_manual_zoom(self, value: int) -> None:
+        self.zoom_slider.blockSignals(True)
+        self.zoom_slider.setValue(value)
+        self.zoom_slider.blockSignals(False)
+        self._zoom_changed(value)
+
+    def _fit_page(self) -> None:
+        doc = self.current_document()
+        if doc is not None and doc.ready:
+            doc.fit_page()
+
+    def _show_fullscreen_preview(self, mode="single") -> None:
+        doc = self.current_document()
+        if doc is None or not doc.ready or not doc.page_sizes:
+            return
+        if self._fullscreen_preview is not None:
+            return
+        viewer = FullscreenPreview(self, doc, doc.preview_page_index(), mode)
+        self._fullscreen_preview = viewer
+        viewer.setGeometry(self.screen().geometry())
+        viewer.showFullScreen()
+        viewer.activateWindow()
+        viewer.setFocus()
 
     def current_document(self):
         return self.tabs.currentWidget() if hasattr(self, "tabs") else None
@@ -525,10 +694,10 @@ class MainWindow(QMainWindow):
         if self._closing:
             return
         doc = self.current_document()
-        self._update_window_title(doc.source_path if doc is not None else None)
+        self._update_window_title()
         if doc is not None:
             self.zoom_slider.blockSignals(True)
-            self.zoom_slider.setValue(doc.zoom)
+            self.zoom_slider.setValue(round(doc.zoom))
             self.zoom_slider.blockSignals(False)
             self.render_service.prioritize(doc.document_id)
             if doc.ready and (doc.render_generation < 0 or doc.render_timer.isActive()):
@@ -551,9 +720,20 @@ class MainWindow(QMainWindow):
             checkbox.setEnabled(ready and not self._export_running and (odd or doc.page_count >= 2))
             checkbox.blockSignals(False)
         self._syncing_bulk = False
-        self.zoom_reset_action.setText(f"{self.zoom_slider.value()}%")
-        self.zoom_out_action.setEnabled(self.zoom_slider.value() > 25)
-        self.zoom_in_action.setEnabled(self.zoom_slider.value() < 200)
+        zoom = doc.zoom if ready else self.zoom_slider.value()
+        if ready:
+            self.zoom_slider.blockSignals(True)
+            self.zoom_slider.setValue(round(zoom))
+            self.zoom_slider.blockSignals(False)
+        self.zoom_reset_action.setText(f"{zoom:g}%")
+        self.fit_action.setChecked(ready and doc.fit_mode)
+        available = ready and bool(doc.page_sizes)
+        self.fit_action.setEnabled(available)
+        self.fullscreen_action.setEnabled(available)
+        self.spread_action.setEnabled(available)
+        self.cover_action.setEnabled(available)
+        self.zoom_out_action.setEnabled(zoom > 25)
+        self.zoom_in_action.setEnabled(zoom < 200)
         enabled = bool(self.output_selection()) and not self._export_running
         self.export_action.setEnabled(enabled)
         self.split_action.setEnabled(enabled)
@@ -685,6 +865,7 @@ class MainWindow(QMainWindow):
         if doc is None:
             return
         doc.render_timer.stop()
+        doc.fit_timer.stop()
         doc.grid_host.finish_drag()
         self.render_service.cancel_pending(doc.document_id)
         for generation, document_id in list(self._render_documents.items()):
@@ -708,6 +889,10 @@ class MainWindow(QMainWindow):
         try:
             generation = int(payload.get("generation", -1))
         except (TypeError, ValueError):
+            return
+        viewer = self._fullscreen_preview
+        if viewer is not None and viewer.render_generation == generation:
+            viewer.accept_render(payload)
             return
         doc = self.documents.get(self._render_documents.get(generation))
         if doc is not None and doc.render_generation == generation and not self._closing:
@@ -819,8 +1004,11 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self._closing = True
+        if self._fullscreen_preview is not None:
+            self._fullscreen_preview.close()
         for doc in self.documents.values():
             doc.render_timer.stop()
+            doc.fit_timer.stop()
             doc.grid_host.finish_drag()
         self.render_service.close()
         self.thread_pool.clear()
@@ -835,7 +1023,7 @@ def load_app_icon() -> QIcon:
 
 
 def configure_application(app: QApplication) -> None:
-    app.setApplicationName("repdf")
+    app.setApplicationName("RePDF")
     app.setOrganizationName("repdf")
     app.setStyle("Fusion")
     app.setWindowIcon(load_app_icon())

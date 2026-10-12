@@ -93,7 +93,7 @@ class RenderService(QObject):
 
     def request(
         self, source: Path, scale: float, output_dir: Path, generation: int,
-        *, document_id: int = 0,
+        *, document_id: int = 0, pages: list[int] | None = None,
     ) -> None:
         payload: dict[str, object] = {
             "source": str(source),
@@ -101,6 +101,8 @@ class RenderService(QObject):
             "output_dir": str(output_dir),
             "generation": generation,
         }
+        if pages is not None:
+            payload["pages"] = list(pages)
         with self._lock:
             if self._closed:
                 return
