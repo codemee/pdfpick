@@ -5,6 +5,7 @@ from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QWidget
 
 from repdf.strings import tr
+from repdf.widgets import PagePreviewLabel
 
 
 class FullscreenPreview(QWidget):
@@ -63,7 +64,15 @@ class FullscreenPreview(QWidget):
         self.checkboxes = {}
         for index in self.visible_pages:
             self.images[index] = self.document.page_cards[index].preview.pixmap().toImage()
-            label = QLabel(self)
+            label = PagePreviewLabel('', draggable=False)
+            label.setParent(self)
+            label.set_text_mode(self.owner.copy_text_action.isChecked())
+            label.text_selected.connect(
+                lambda start, end, page=index, preview=label:
+                self.owner._copy_text_selection(self.document, page, preview, start, end))
+            label.selection_preview.connect(
+                lambda start, end, page=index, preview=label:
+                self.owner._copy_text_selection(self.document, page, preview, start, end, copy=False))
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             if self.images[index].isNull():
                 label.setText(tr("正在產生頁面預覽…"))

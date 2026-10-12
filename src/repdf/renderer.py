@@ -110,6 +110,19 @@ class RenderService(QObject):
             self._pending.move_to_end(document_id, last=False)
             self._start_next()
 
+    def request_text(self, source: Path, page: int, start: tuple[float, float],
+                     end: tuple[float, float], generation: int, document_id: int) -> None:
+        payload: dict[str, object] = {
+            "type": "copy_text", "source": str(source), "page": page,
+            "start": start, "end": end, "generation": generation,
+        }
+        with self._lock:
+            if self._closed:
+                return
+            self._pending[document_id] = payload
+            self._pending.move_to_end(document_id, last=False)
+            self._start_next()
+
     def cancel_pending(self, document_id: int) -> None:
         with self._lock:
             self._pending.pop(document_id, None)

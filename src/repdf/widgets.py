@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from repdf.strings import tr
 
-from PySide6.QtCore import QEasingCurve, QMimeData, QPoint, QPropertyAnimation, Qt, Signal
-from PySide6.QtGui import QDrag, QDragEnterEvent, QDragLeaveEvent, QDragMoveEvent, QDropEvent, QImage, QMouseEvent, QPixmap
+from PySide6.QtCore import QEasingCurve, QMimeData, QPoint, QPropertyAnimation, QRect, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QDrag, QDragEnterEvent, QDragLeaveEvent, QDragMoveEvent, QDropEvent, QImage, QMouseEvent, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import QApplication, QCheckBox, QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 
@@ -156,16 +156,123 @@ class DragLabel(QLabel):
         super().mouseReleaseEvent(event)
 
 
+class PagePreviewLabel(DragLabel):
+    text_selected = Signal(QPoint, QPoint)
+    selection_preview = Signal(QPoint, QPoint)
+
+    def __init__(self, text: str, *, draggable: bool = True) -> None:
+        super().__init__(text)
+        self.draggable = draggable
+        self.text_mode = False
+        self._selection_start = None
+        self._selection_end = None
+        self._selecting = False
+        self._highlight_rects = []
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(90)
+        self._preview_timer.timeout.connect(self._preview_selection)
+        if not draggable:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+
+    def set_text_mode(self, enabled: bool) -> None:
+        self.text_mode = enabled
+        self._selection_start = None
+        self._selection_end = None
+        self._selecting = False
+        self._highlight_rects = []
+        self._preview_timer.stop()
+        self._press_position = None
+        self.setCursor(Qt.CursorShape.IBeamCursor if enabled else
+                       Qt.CursorShape.OpenHandCursor if self.draggable else Qt.CursorShape.ArrowCursor)
+        self.setToolTip(tr('拖曳選取文字並複製到剪貼簿') if enabled else
+                        tr('拖曳到另一頁可調整順序') if self.draggable else '')
+        self.update()
+
+    def set_text_highlights(self, rects) -> None:
+        if not self._selecting:
+            self._selection_start = None
+            self._selection_end = None
+        self._highlight_rects = rects
+        self.update()
+
+    def _preview_selection(self) -> None:
+        if self._selecting and self._selection_start is not None and self._selection_end is not None:
+            self.selection_preview.emit(self._selection_start, self._selection_end)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if not self.text_mode:
+            super().mousePressEvent(event)
+            return
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.pressed.emit()
+            self._selection_start = event.position().toPoint()
+            self._selection_end = self._selection_start
+            self._selecting = True
+            self._highlight_rects = []
+            self.update()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if not self.text_mode:
+            if self.draggable:
+                super().mouseMoveEvent(event)
+            return
+        if self._selecting and event.buttons() & Qt.MouseButton.LeftButton:
+            self._selection_end = event.position().toPoint()
+            if not self._preview_timer.isActive():
+                self._preview_timer.start()
+            self.update()
+            event.accept()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if not self.text_mode:
+            super().mouseReleaseEvent(event)
+            return
+        if event.button() == Qt.MouseButton.LeftButton and self._selecting:
+            self._preview_timer.stop()
+            self._selection_end = event.position().toPoint()
+            if (self._selection_end - self._selection_start).manhattanLength() >= QApplication.startDragDistance():
+                self.text_selected.emit(self._selection_start, self._selection_end)
+            self._selecting = False
+            self.update()
+            event.accept()
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        if not self.text_mode:
+            return
+        painter = QPainter(self)
+        highlight = self.palette().highlight().color()
+        highlight.setAlpha(90)
+        if self._highlight_rects:
+            path = QPainterPath()
+            path.setFillRule(Qt.FillRule.WindingFill)
+            for x0, y0, x1, y1 in self._highlight_rects:
+                path.addRect(QRectF(x0 * self.width(), y0 * self.height(),
+                                    (x1 - x0) * self.width(), (y1 - y0) * self.height()))
+            painter.fillPath(path, highlight)
+        elif self._selection_start is not None and self._selection_end is not None:
+            painter.fillRect(QRect(self._selection_start, self._selection_end).normalized(),
+                             highlight)
+        painter.end()
+
+
 class PageCard(QFrame):
     focused = Signal(int)
     selection_changed = Signal(int, bool)
     reorder_requested = Signal(int, int)
+    text_selected = Signal(int, QPoint, QPoint)
+    selection_preview = Signal(int, QPoint, QPoint)
     DRAG_MIME_TYPE = "application/x-repdf-page"
 
     def __init__(self, page_index: int, target_width: int) -> None:
         super().__init__()
         self.page_index = page_index
         self.target_width = target_width
+        self.text_copy_mode = False
         self.setObjectName("pageCard")
         self.setFixedWidth(target_width + 24)
         self.setAcceptDrops(False)
@@ -182,11 +289,15 @@ class PageCard(QFrame):
         header.addStretch()
         header.addWidget(self.drag_handle)
 
-        self.preview = DragLabel(tr('載入中…'))
+        self.preview = PagePreviewLabel(tr('載入中…'))
         self.preview.pressed.connect(lambda: self.focused.emit(self.page_index))
         self.drag_handle.pressed.connect(lambda: self.focused.emit(self.page_index))
         self.checkbox.clicked.connect(lambda: self.focused.emit(self.page_index))
         self.preview.drag_requested.connect(self._start_drag)
+        self.preview.text_selected.connect(
+            lambda start, end: self.text_selected.emit(self.page_index, start, end))
+        self.preview.selection_preview.connect(
+            lambda start, end: self.selection_preview.emit(self.page_index, start, end))
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setMinimumHeight(max(80, int(target_width * 1.3)))
         self.preview.setFixedWidth(target_width)
@@ -198,7 +309,7 @@ class PageCard(QFrame):
         layout.addWidget(self.preview, alignment=Qt.AlignmentFlag.AlignHCenter)
 
     def _start_drag(self) -> None:
-        if getattr(self.window(), "_export_running", False):
+        if self.text_copy_mode or getattr(self.window(), "_export_running", False):
             return
         drag = QDrag(self)
         mime = QMimeData()
@@ -260,6 +371,13 @@ class PageCard(QFrame):
         self.checkbox.blockSignals(True)
         self.checkbox.setChecked(selected)
         self.checkbox.blockSignals(False)
+
+    def set_text_copy_mode(self, enabled: bool) -> None:
+        self.text_copy_mode = enabled
+        self.preview.set_text_mode(enabled)
+        self.drag_handle.setCursor(Qt.CursorShape.ArrowCursor if enabled else Qt.CursorShape.OpenHandCursor)
+        self.drag_handle.setToolTip(tr('文字複製模式中無法拖放頁面') if enabled else
+                                    tr('拖曳到另一頁可調整順序'))
 
     def set_target_width(self, width: int) -> None:
         self.target_width = width

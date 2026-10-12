@@ -57,6 +57,14 @@ def toolbar_icon(kind: str) -> QIcon:
                            ((21, 16), (21, 21), (16, 21)), ((8, 21), (3, 21), (3, 16))):
                 painter.drawPolyline(QPolygonF([QPointF(x, y) for x, y in points]))
             painter.drawRect(QRectF(8, 6, 8, 12))
+        elif kind == "copy_text":
+            painter.drawLine(3, 4, 18, 4)
+            painter.drawLine(3, 8, 16, 8)
+            painter.drawLine(3, 12, 13, 12)
+            painter.drawLine(3, 16, 10, 16)
+            painter.drawLine(17, 11, 17, 21)
+            painter.drawLine(14, 11, 20, 11)
+            painter.drawLine(14, 21, 20, 21)
         elif kind in ("fullscreen", "fullscreen_spread", "fullscreen_cover"):
             if kind == "fullscreen":
                 painter.drawRect(QRectF(5, 2, 14, 20))

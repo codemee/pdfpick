@@ -11,7 +11,7 @@ RePDF 是 **Rearrange PDF** 的意思，命令名稱與 Python 套件名稱為 `
 - **Windows x86_64**：下載 `repdf-<版本>-windows-x86_64.exe`，直接執行。
 - **macOS Apple Silicon（arm64）**：下載 `repdf-<版本>-macos-arm64.dmg`，開啟後將 `RePDF.app` 拖入 Applications，再從 Applications 啟動。
 
-既有 `v0.0.7` 及較早的 Release 仍使用 `PDFPick` 檔名與 `PDFPick.app`，`v0.0.8` 的 macOS App 名稱為 `repdf.app`；後續 App 名稱統一為 `RePDF.app`，命令與發布檔案前綴仍為 `repdf`。
+既有 `v0.0.7` 及較早的 Release 仍使用 `PDFPick` 檔名與 `PDFPick.app`，`v0.0.8` 的 macOS App 名稱為 `repdf.app`；自 `v0.0.9` 起 App 名稱為 `RePDF.app`，命令與發布檔案前綴仍為 `repdf`。
 
 Release 同時提供 SHA256 校驗檔。簽章與打包資訊見下方「Windows 執行檔與 macOS App／DMG」。
 
@@ -46,6 +46,7 @@ uv run repdf
 | <img src="docs/images/toolbar-split.png" width="24" alt="拆分輸出圖示"> | 拆分輸出 | 將選取頁面依目前順序逐頁存成獨立 PDF，指定基本檔名與儲存位置。 | — |
 | <img src="docs/images/toolbar-odd.png" height="22" alt="單數頁核取方塊"> | 單數頁 | 選取或取消目前標籤的原始單數頁；部分選取時顯示三態標記。 | — |
 | <img src="docs/images/toolbar-even.png" height="22" alt="雙數頁核取方塊"> | 雙數頁 | 選取或取消目前標籤的原始雙數頁；部分選取時顯示三態標記。 | — |
+| <img src="docs/images/toolbar-copy-text.png" width="24" alt="複製文字圖示"> | 複製文字 | 點擊切換文字模式，啟用時按鈕會顯示選取底色。拖曳時實際選到的字會以螢光筆標示；放開滑鼠即複製到剪貼簿。關閉後恢復拖放排序；掃描影像需先經 OCR。全螢幕預覽也適用。 | — |
 | <img src="docs/images/toolbar-zoom.png" width="160" alt="顯示比例與縮放滑桿"> | 顯示比例 | 滑桿調整 25%–200%；點擊比例回到 100%。鍵盤縮放每次調整 25 個百分點，完整說明在比例的 tooltip。 | 放大：Ctrl++／Ctrl+=；縮小：Ctrl+-；100%：Ctrl+0 |
 | <img src="docs/images/toolbar-fit.png" width="24" alt="Fit 圖示"> | Fit | 將目前單頁等比例縮放至預覽區；調整視窗大小時自動適應。拖動滑桿或使用縮放快捷鍵會回到手動比例。 | — |
 | <img src="docs/images/toolbar-fullscreen.png" width="24" alt="全螢幕單頁圖示"> | 全螢幕單頁 | 每次顯示一頁，依螢幕寬度或高度等比例填滿；可用頁面上方的核取方塊選頁。 | F11 開啟／返回；Esc 返回 |
@@ -66,7 +67,7 @@ Fit 與全螢幕優先使用最近點擊且仍可見的頁面；未指定時使�
 
 拆分時，例如指定 `report.pdf`，會輸出 `report_01.pdf`、`report_02.pdf`。序號從 1 開始，至少兩位，依本次輸出總數補零對齊（100 頁使用 `001`–`100`），與原始頁碼無關。已存在的單頁檔案會先詢問是否覆蓋。
 
-標籤左側核取方塊預設不勾選。有勾選標籤時，只輸出勾選檔案的已選頁面；沒有勾選任何標籤時，只輸出目前標籤的已選頁面。勾選檔案沒有選頁時不提供輸出頁面，不會自動改選目前檔案。拖曳標籤可調整檔案順序，輸出先依標籤順序，再依各檔內的頁面排序；拆分序號跨檔連續。按標籤右側的 × 可關閉檔案。
+標籤左側核取方塊預設不勾選。有勾選標籤時，只輸出勾選檔案的已選頁面；沒有勾選任何標籤時，只輸出目前標籤的已選頁面。勾選檔案沒有選頁時不提供輸出頁面，不會自動改選目前檔案。拖曳標籤可調整檔案順序，輸出先依標籤順序，再依各檔內的頁面排序；拆分序號跨檔連續。按標籤右側的 × 或使用系統慣用快捷鍵可關閉目前標籤：Windows／Linux 為 Ctrl+W，Windows 也支援 Ctrl+F4；macOS 為 ⌘W。關閉按鈕的 tooltip 會顯示目前平台適用的快捷鍵。
 
 密碼保護的 PDF 暫不支援。輸出頁面依畫面排列順序；未勾選的頁面不會輸出。
 

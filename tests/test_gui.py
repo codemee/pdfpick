@@ -1,7 +1,8 @@
 from pathlib import Path
+import sys
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QImage, QKeySequence
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from pypdf import PdfReader, PdfWriter
 
@@ -98,6 +99,39 @@ def test_initial_controls(qtbot) -> None:
     assert not window.split_action.isEnabled()
     assert not window.odd_checkbox.isEnabled()
     assert not load_app_icon().isNull()
+
+
+def test_platform_close_shortcut_closes_only_current_tab(qtbot, monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(DocumentView, "_queue_all_renders", lambda self: None)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    first = ready_document(window, tmp_path / "first.pdf", 1)
+    second = ready_document(window, tmp_path / "second.pdf", 1)
+    third = ready_document(window, tmp_path / "third.pdf", 1)
+    first.page_cards[0].checkbox.click()
+    window.tabs.setCurrentWidget(second)
+    window.activateWindow()
+    qtbot.wait(50)
+    assert window.close_tab_action.shortcuts() == QKeySequence.keyBindings(QKeySequence.StandardKey.Close)
+    assert "W" in second.close_button.toolTip()
+    window._set_export_running(True)
+    assert not window.close_tab_action.isEnabled()
+    window._set_export_running(False)
+    modifier = Qt.KeyboardModifier.MetaModifier if sys.platform == "darwin" else Qt.KeyboardModifier.ControlModifier
+    qtbot.keyClick(window, Qt.Key.Key_W, modifier)
+    assert window.ordered_documents() == [first, third]
+    assert first.selected_pages == {0}
+    assert window.current_document() is third
+    if QKeySequence("Ctrl+F4") in window.close_tab_action.shortcuts():
+        qtbot.keyClick(window, Qt.Key.Key_F4, Qt.KeyboardModifier.ControlModifier)
+    else:
+        window.close_tab_action.trigger()
+    assert window.ordered_documents() == [first]
+    window.close_tab_action.trigger()
+    assert window.tabs.count() == 0
+    assert not window.close_tab_action.isEnabled()
+    assert window.isVisible()
 
 
 def test_toolbar_shortcuts_and_zoom_limits(qtbot, monkeypatch) -> None:

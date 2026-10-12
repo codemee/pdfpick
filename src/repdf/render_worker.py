@@ -41,6 +41,86 @@ def render_document(
         document.close()
 
 
+def extract_selection_result(source: Path, page_index: int, start: list[float],
+                             end: list[float]) -> dict[str, object]:
+    """Return copied text and the matching glyph bounds in rendered-page coordinates."""
+    document = pdfium.PdfDocument(str(source))
+    try:
+        if not 0 <= page_index < len(document):
+            raise ValueError("Invalid text selection page index")
+        page = document[page_index]
+        try:
+            left, bottom, right, top = page.get_bbox()
+            rotation = page.get_rotation()
+            width, height = right - left, top - bottom
+
+            def canvas(position):
+                if len(position) != 2:
+                    raise ValueError("Invalid text selection position")
+                x, y = (min(1, max(0, float(value))) for value in position)
+                if rotation == 90:
+                    return left + y * width, bottom + x * height
+                if rotation == 180:
+                    return right - x * width, bottom + y * height
+                if rotation == 270:
+                    return right - y * width, top - x * height
+                return left + x * width, top - y * height
+
+            def normalized(x, y):
+                if rotation == 90:
+                    return (y - bottom) / height, (x - left) / width
+                if rotation == 180:
+                    return (right - x) / width, (y - bottom) / height
+                if rotation == 270:
+                    return (top - y) / height, (right - x) / width
+                return (x - left) / width, (top - y) / height
+
+            x1, y1 = canvas(start)
+            x2, y2 = canvas(end)
+            textpage = page.get_textpage()
+            try:
+                first = textpage.get_index(x1, y1, 8, 8)
+                last = textpage.get_index(x2, y2, 8, 8)
+                if first is not None and last is not None:
+                    lo, hi = sorted((first, last))
+                    text = textpage.get_text_range(lo, hi - lo + 1)
+                else:
+                    # Include glyph height around a thin or rotated drag.
+                    bounds = (min(x1, x2) - 8, min(y1, y2) - 18,
+                              max(x1, x2) + 8, max(y1, y2) + 18)
+                    hits = []
+                    for index in range(textpage.count_chars()):
+                        box = textpage.get_charbox(index)
+                        if box and box[0] <= bounds[2] and box[2] >= bounds[0] and box[1] <= bounds[3] and box[3] >= bounds[1]:
+                            hits.append(index)
+                    if not hits:
+                        return {"text": "", "rects": []}
+                    lo, hi = hits[0], hits[-1]
+                    text = textpage.get_text_range(lo, hi - lo + 1)
+
+                rects = []
+                if text:
+                    for index in range(lo, hi + 1):
+                        box = textpage.get_charbox(index)
+                        if not box or box[2] <= box[0] or box[3] <= box[1]:
+                            continue
+                        corners = [normalized(x, y) for x in (box[0], box[2])
+                                   for y in (box[1], box[3])]
+                        xs, ys = zip(*corners)
+                        rects.append([min(xs), min(ys), max(xs), max(ys)])
+                return {"text": text, "rects": rects}
+            finally:
+                textpage.close()
+        finally:
+            page.close()
+    finally:
+        document.close()
+
+
+def extract_selection(source: Path, page_index: int, start: list[float], end: list[float]) -> str:
+    return str(extract_selection_result(source, page_index, start, end)["text"])
+
+
 def serve(
     input_stream: TextIO | None = None,
     output_stream: TextIO | None = None,
@@ -56,11 +136,17 @@ def serve(
         request: dict[str, object] = {}
         try:
             request = json.loads(line)
-            render_document(
-                Path(request["source"]), float(request["scale"]),
-                Path(request["output_dir"]), int(request["generation"]), output_stream,
-                pages=request.get("pages"),
-            )
+            if request.get("type") == "copy_text":
+                extracted = extract_selection_result(Path(request["source"]), int(request["page"]),
+                                                     request["start"], request["end"])
+                print(json.dumps({"type": "text", "generation": int(request["generation"]),
+                                  **extracted}), file=output_stream, flush=True)
+            else:
+                render_document(
+                    Path(request["source"]), float(request["scale"]),
+                    Path(request["output_dir"]), int(request["generation"]), output_stream,
+                    pages=request.get("pages"),
+                )
             print(json.dumps({
                 "type": "done", "generation": int(request["generation"]),
             }), file=output_stream, flush=True)

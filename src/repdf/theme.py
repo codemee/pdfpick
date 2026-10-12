@@ -70,6 +70,7 @@ class ThemeController(QObject):
         slider_handle = "#aecbfa" if dark else "#0b57d0"
         hover = "#35383d" if dark else "#e7ebf0"
         pressed = "#41464e" if dark else "#d8e3f3"
+        selected_tool = "#294366" if dark else "#d8e7ff"
         disabled = "#777b80" if dark else "#9aa0a6"
         check = files("repdf").joinpath("assets", "check.svg").as_posix()
         partial = files("repdf").joinpath("assets", "partial.svg").as_posix()
@@ -91,6 +92,8 @@ class ThemeController(QObject):
                            border-radius: 4px; padding: 4px; color: palette(button-text); }}
             QToolButton:hover {{ background: {hover}; }}
             QToolButton:pressed {{ background: {pressed}; }}
+            QToolButton#copyTextTool:checked {{ background: {selected_tool};
+                                                border-color: {slider_fill}; }}
             QToolButton:focus {{ border-color: {slider_fill}; }}
             QToolButton:disabled {{ color: {disabled}; background: transparent; }}
             QPushButton {{ background: {card}; color: palette(button-text);

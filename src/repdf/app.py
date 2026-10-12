@@ -6,6 +6,7 @@ import sys
 import tempfile
 from importlib.resources import files
 from pathlib import Path
+from shiboken6 import isValid
 
 from PySide6.QtCore import QEvent, QSettings, QSize, Qt, QThreadPool, QTimer, Slot
 from PySide6.QtGui import (
@@ -91,7 +92,7 @@ class DocumentView(QWidget):
         self.include_checkbox.toggled.connect(owner._sync_controls)
         self.close_button = QToolButton()
         self.close_button.setText("×")
-        self.close_button.setToolTip(tr('關閉此檔案'))
+        self.close_button.setToolTip(tr('關閉此檔案（{p0}）', p0=owner.close_shortcut_text))
         self.close_button.setFixedSize(22, 22)
         self.close_button.clicked.connect(lambda: owner.close_tab(owner.tabs.indexOf(self)))
         root = QVBoxLayout(self)
@@ -149,9 +150,16 @@ class DocumentView(QWidget):
         width = self._target_preview_width()
         for page_index in range(self.page_count):
             card = PageCard(page_index, width)
+            card.set_text_copy_mode(self.owner.copy_text_action.isChecked())
             card.selection_changed.connect(self._page_selection_changed)
             card.reorder_requested.connect(self._move_page)
             card.focused.connect(self._focus_page)
+            card.text_selected.connect(
+                lambda index, start, end, preview=card.preview:
+                self.owner._copy_text_selection(self, index, preview, start, end))
+            card.selection_preview.connect(
+                lambda index, start, end, preview=card.preview:
+                self.owner._copy_text_selection(self, index, preview, start, end, copy=False))
             self.page_cards.append(card)
         self._reflow_grid()
 
@@ -184,7 +192,7 @@ class DocumentView(QWidget):
 
     @Slot(int, int)
     def _insert_page(self, source_index: int, insertion: int) -> None:
-        if self.owner._export_running or source_index not in self.page_order:
+        if self.owner._export_running or self.owner.copy_text_action.isChecked() or source_index not in self.page_order:
             return
         self.page_order.remove(source_index)
         self.page_order.insert(insertion, source_index)
@@ -195,7 +203,7 @@ class DocumentView(QWidget):
 
     @Slot(int, int)
     def _move_page(self, source_index: int, target_index: int) -> None:
-        if self.owner._export_running or source_index == target_index:
+        if self.owner._export_running or self.owner.copy_text_action.isChecked() or source_index == target_index:
             return
         if source_index not in self.page_order or target_index not in self.page_order:
             return
@@ -409,6 +417,7 @@ class MainWindow(QMainWindow):
         self._next_document_id = 0
         self._next_generation = 0
         self._render_documents = {}
+        self._text_requests = {}
         self._active_tasks = set()
         self._load_batches = {}
         self._document_batches = {}
@@ -478,6 +487,16 @@ class MainWindow(QMainWindow):
         scrollbar.triggerAction(action)
 
     def _build_toolbar(self) -> None:
+        close_keys = QKeySequence.keyBindings(QKeySequence.StandardKey.Close)
+        names = [sequence.toString(QKeySequence.SequenceFormat.NativeText) for sequence in close_keys]
+        names = sorted((name for name in names if name and name != "Close"),
+                       key=lambda name: "W" not in name.upper())
+        self.close_shortcut_text = " / ".join(names)
+        self.close_tab_action = QAction(tr('關閉目前標籤頁'), self)
+        self.close_tab_action.setShortcuts(close_keys)
+        self.close_tab_action.setToolTip(tr('關閉目前標籤頁（{p0}）', p0=self.close_shortcut_text))
+        self.close_tab_action.triggered.connect(lambda: self.close_tab(self.tabs.currentIndex()))
+        self.addAction(self.close_tab_action)
         self.toolbar = QToolBar(tr('檔案與顯示'), self)
         self.toolbar.setMovable(False)
         self.toolbar.setFloatable(False)
@@ -519,6 +538,13 @@ class MainWindow(QMainWindow):
         self.odd_checkbox.clicked.connect(lambda checked: self._toggle_parity(True, checked))
         self.even_checkbox.clicked.connect(lambda checked: self._toggle_parity(False, checked))
         self.toolbar.addWidget(selection_controls)
+        self.toolbar.addSeparator()
+        self.copy_text_action = QAction(tr('複製文字'), self)
+        self.copy_text_action.setCheckable(True)
+        self.copy_text_action.setToolTip(tr('複製文字：點擊切換；啟用後在頁面拖曳選取文字並複製到剪貼簿，停用後恢復拖放排序。掃描影像中的文字需先經過 OCR。'))
+        self.copy_text_action.toggled.connect(self._set_copy_text_mode)
+        self.toolbar.addAction(self.copy_text_action)
+        self.toolbar.widgetForAction(self.copy_text_action).setObjectName('copyTextTool')
 
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -583,7 +609,8 @@ class MainWindow(QMainWindow):
 
     def _refresh_toolbar_icons(self) -> None:
         for action, kind in ((self.open_action, "open"), (self.export_action, "export"),
-                             (self.split_action, "split"), (self.fit_action, "fit"),
+                             (self.split_action, "split"), (self.copy_text_action, "copy_text"),
+                             (self.fit_action, "fit"),
                              (self.fullscreen_action, "fullscreen"),
                              (self.spread_action, "fullscreen_spread"),
                              (self.cover_action, "fullscreen_cover")):
@@ -662,6 +689,36 @@ class MainWindow(QMainWindow):
         if doc is not None and doc.ready:
             doc.fit_page()
 
+    def _set_copy_text_mode(self, enabled: bool) -> None:
+        for doc in self.documents.values():
+            doc.grid_host.finish_drag()
+            for card in doc.page_cards:
+                card.set_text_copy_mode(enabled)
+        if self._fullscreen_preview is not None:
+            for label in self._fullscreen_preview.labels.values():
+                label.set_text_mode(enabled)
+        self._text_requests.clear()
+
+    def _copy_text_selection(self, doc, page_index, label, start, end, *, copy=True) -> None:
+        if not self.copy_text_action.isChecked() or doc.document_id not in self.documents:
+            return
+        if label.pixmap().isNull() or label.width() < 1 or label.height() < 1:
+            return
+        self._next_generation += 1
+        generation = self._next_generation
+        for previous, (document_id, _label, _copy) in list(self._text_requests.items()):
+            if document_id == doc.document_id:
+                self._text_requests.pop(previous)
+        self._text_requests[generation] = (doc.document_id, label, copy)
+        self.render_service.request_text(
+            doc.source_path, page_index,
+            (start.x() / label.width(), start.y() / label.height()),
+            (end.x() / label.width(), end.y() / label.height()),
+            generation, -1_000_000 - doc.document_id,
+        )
+        if copy:
+            self.statusBar().showMessage(tr('正在擷取文字…'))
+
     def _show_fullscreen_preview(self, mode="single") -> None:
         doc = self.current_document()
         if doc is None or not doc.ready or not doc.page_sizes:
@@ -710,6 +767,7 @@ class MainWindow(QMainWindow):
             return
         doc = self.current_document()
         ready = doc is not None and doc.ready
+        self.close_tab_action.setEnabled(self.tabs.count() > 0 and not self._export_running)
         self._syncing_bulk = True
         for checkbox, odd in ((self.odd_checkbox, True), (self.even_checkbox, False)):
             checkbox.blockSignals(True)
@@ -732,6 +790,7 @@ class MainWindow(QMainWindow):
         self.fullscreen_action.setEnabled(available)
         self.spread_action.setEnabled(available)
         self.cover_action.setEnabled(available)
+        self.copy_text_action.setEnabled(available)
         self.zoom_out_action.setEnabled(zoom > 25)
         self.zoom_in_action.setEnabled(zoom < 200)
         enabled = bool(self.output_selection()) and not self._export_running
@@ -868,6 +927,9 @@ class MainWindow(QMainWindow):
         doc.fit_timer.stop()
         doc.grid_host.finish_drag()
         self.render_service.cancel_pending(doc.document_id)
+        self.render_service.cancel_pending(-1_000_000 - doc.document_id)
+        self._text_requests = {generation: request for generation, request in self._text_requests.items()
+                               if request[0] != doc.document_id}
         for generation, document_id in list(self._render_documents.items()):
             if document_id == doc.document_id:
                 self._render_documents.pop(generation)
@@ -891,6 +953,26 @@ class MainWindow(QMainWindow):
         except (TypeError, ValueError):
             return
         viewer = self._fullscreen_preview
+        if generation in self._text_requests:
+            document_id, label, copy = self._text_requests[generation]
+            if document_id in self.documents and not self._closing:
+                if payload.get('type') == 'text':
+                    extracted = str(payload.get('text', ''))
+                    if isValid(label) and label.text_mode:
+                        label.set_text_highlights(payload.get('rects', []))
+                    if extracted and copy:
+                        QApplication.clipboard().setText(extracted)
+                        self.statusBar().showMessage(tr('已複製 {p0} 個字元到剪貼簿', p0=len(extracted)))
+                    elif copy:
+                        self.statusBar().showMessage(tr('選取範圍沒有可複製的文字'))
+                elif payload.get('type') == 'error':
+                    if isValid(label):
+                        label.set_text_highlights([])
+                    if copy:
+                        self.statusBar().showMessage(tr('無法擷取文字：{p0}', p0=payload.get('message', '')))
+            if payload.get('type') in {'done', 'error'}:
+                self._text_requests.pop(generation, None)
+            return
         if viewer is not None and viewer.render_generation == generation:
             viewer.accept_render(payload)
             return
