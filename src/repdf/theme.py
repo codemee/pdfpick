@@ -80,7 +80,7 @@ class ThemeController(QObject):
                                border-radius: 8px; }}
             QFrame#pageCard QLabel, QFrame#pageCard QCheckBox {{ border: none; }}
             QToolBar {{ background: palette(window); border: none;
-                        border-bottom: 1px solid {border}; padding: 4px 8px; spacing: 4px; }}
+                        border-bottom: 1px solid {border}; padding: 4px; spacing: 4px; }}
             QToolBar::separator {{ background: {border}; width: 1px; margin: 5px 4px; }}
             QTabWidget::pane {{ border: none; }}
             QTabBar::tab {{ background: transparent; color: palette(window-text);

@@ -501,7 +501,8 @@ class MainWindow(QMainWindow):
         self.toolbar.setMovable(False)
         self.toolbar.setFloatable(False)
         self.toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
-        self.toolbar.setIconSize(QSize(18, 18))
+        self.toolbar.setFixedHeight(42)
+        self.toolbar.setIconSize(QSize(20, 20))
         self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.addToolBar(self.toolbar)
 
@@ -606,6 +607,13 @@ class MainWindow(QMainWindow):
         self.theme_action.triggered.connect(self._cycle_theme)
         self.toolbar.addAction(self.theme_action)
         self._refresh_toolbar_icons()
+        for action in self.toolbar.actions():
+            button = self.toolbar.widgetForAction(action)
+            if isinstance(button, QToolButton):
+                if button is self.zoom_display:
+                    button.setFixedHeight(34)
+                else:
+                    button.setFixedSize(34, 34)
 
     def _refresh_toolbar_icons(self) -> None:
         for action, kind in ((self.open_action, "open"), (self.export_action, "export"),

@@ -53,7 +53,7 @@ uv run repdf
 | <img src="docs/images/toolbar-fullscreen-spread.png" width="24" alt="全螢幕對頁圖示"> | 全螢幕對頁 | 依目前順序兩頁並排：第 1、2 頁一組，第 3、4 頁一組，以此類推；每頁可獨立勾選。 | Esc／F11 返回 |
 | <img src="docs/images/toolbar-fullscreen-cover.png" width="24" alt="全螢幕封面加對頁圖示"> | 全螢幕封面＋對頁 | 目前順序的第一頁作為封面單獨顯示；第 2、3 頁一組，第 4、5 頁一組，以此類推；每頁可獨立勾選。 | Esc／F11 返回 |
 | <img src="docs/images/toolbar-language-system.png" width="24" alt="跟隨系統語言"> <img src="docs/images/toolbar-language-zh.png" width="24" alt="繁體中文"> <img src="docs/images/toolbar-language-en.png" width="24" alt="English"> | 介面語言 | 點擊依序切換「跟隨系統 → 繁體中文 → English」，選擇會記住。 | — |
-| <img src="docs/images/toolbar-theme-system.png" width="24" alt="跟隨系統配色：太陽與月亮"> <img src="docs/images/toolbar-theme-light.png" width="24" alt="淺色：太陽"> <img src="docs/images/toolbar-theme-dark.png" width="24" alt="深色：月亮"> | 介面配色 | 點擊依序切換「跟隨系統 → 淺色 → 深色」，選擇會記住。 | — |
+| <img src="docs/images/toolbar-theme-system.png" width="24" alt="跟隨系統配色：左白右黑圓形"> <img src="docs/images/toolbar-theme-light.png" width="24" alt="淺色：太陽"> <img src="docs/images/toolbar-theme-dark.png" width="24" alt="深色：月亮"> | 介面配色 | 點擊依序切換「跟隨系統 → 淺色 → 深色」，選擇會記住。 | — |
 
 各檔案以主檔名顯示在標籤頁，完整路徑顯示於標籤 tooltip；視窗標題列只顯示 `RePDF` 與版本編號。同一路徑再次開啟會切換到既有標籤。預覽頁面水平置中，Fit 使用單欄顯示。各檔案獨立保留比例、捲動位置、選頁與頁面排序；100% 對應 Windows 的 96 DPI 顯示尺度。
 

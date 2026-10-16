@@ -28,18 +28,14 @@ def toolbar_icon(kind: str) -> QIcon:
             painter.drawEllipse(QRectF(8, 3, 8, 18))
             painter.drawLine(3, 12, 21, 12)
         elif kind == "theme_system":
-            moon = QPainterPath(QPointF(8, 2))
-            moon.cubicTo(1, 1, 1, 10, 6, 10)
-            moon.cubicTo(8, 10, 9, 8, 9, 7)
-            moon.cubicTo(4, 8, 4, 4, 8, 2)
-            painter.drawPath(moon)
-            painter.drawLine(19, 2, 5, 22)
-            painter.drawEllipse(QRectF(14, 14, 6, 6))
-            for x1, y1, x2, y2 in ((17, 11, 17, 12), (17, 22, 17, 23),
-                                    (11, 17, 12, 17), (22, 17, 23, 17),
-                                    (12, 12, 13, 13), (21, 21, 22, 22),
-                                    (12, 22, 13, 21), (21, 13, 22, 12)):
-                painter.drawLine(x1, y1, x2, y2)
+            circle = QPainterPath()
+            circle.addEllipse(QRectF(3, 3, 18, 18))
+            painter.fillPath(circle, Qt.GlobalColor.white)
+            painter.save()
+            painter.setClipPath(circle)
+            painter.fillRect(QRectF(12, 3, 9, 18), Qt.GlobalColor.black)
+            painter.restore()
+            painter.drawPath(circle)
         elif kind == "theme_light":
             painter.drawEllipse(QRectF(7, 7, 10, 10))
             for x1, y1, x2, y2 in ((12, 2, 12, 4), (12, 20, 12, 22), (2, 12, 4, 12),
