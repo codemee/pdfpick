@@ -8,6 +8,8 @@ from typing import TextIO
 
 import pypdfium2 as pdfium
 
+from repdf.ocr import OcrError, recognize_selection, suspicious_text
+
 
 def render_document(
     source: Path, scale: float, output_dir: Path, generation: int,
@@ -42,7 +44,8 @@ def render_document(
 
 
 def extract_selection_result(source: Path, page_index: int, start: list[float],
-                             end: list[float]) -> dict[str, object]:
+                             end: list[float], *, allow_ocr: bool = False,
+                             on_ocr=None) -> dict[str, object]:
     """Return copied text and the matching glyph bounds in rendered-page coordinates."""
     document = pdfium.PdfDocument(str(source))
     try:
@@ -108,7 +111,16 @@ def extract_selection_result(source: Path, page_index: int, start: list[float],
                                    for y in (box[1], box[3])]
                         xs, ys = zip(*corners)
                         rects.append([min(xs), min(ys), max(xs), max(ys)])
-                return {"text": text, "rects": rects}
+                result = {"text": text, "rects": rects}
+                if allow_ocr and text and suspicious_text(text):
+                    if on_ocr is not None:
+                        on_ocr()
+                    try:
+                        result['text'] = recognize_selection(page, rects)
+                        result['ocr_used'] = True
+                    except OcrError as exc:
+                        result['ocr_error'] = str(exc)
+                return result
             finally:
                 textpage.close()
         finally:
@@ -138,7 +150,9 @@ def serve(
             request = json.loads(line)
             if request.get("type") == "copy_text":
                 extracted = extract_selection_result(Path(request["source"]), int(request["page"]),
-                                                     request["start"], request["end"])
+                    request["start"], request["end"], allow_ocr=bool(request.get('allow_ocr', False)),
+                    on_ocr=lambda: print(json.dumps({'type': 'ocr', 'generation': int(request['generation'])}),
+                                         file=output_stream, flush=True))
                 print(json.dumps({"type": "text", "generation": int(request["generation"]),
                                   **extracted}), file=output_stream, flush=True)
             else:

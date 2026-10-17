@@ -723,6 +723,7 @@ class MainWindow(QMainWindow):
             (start.x() / label.width(), start.y() / label.height()),
             (end.x() / label.width(), end.y() / label.height()),
             generation, -1_000_000 - doc.document_id,
+            allow_ocr=copy,
         )
         if copy:
             self.statusBar().showMessage(tr('正在擷取文字…'))
@@ -964,13 +965,20 @@ class MainWindow(QMainWindow):
         if generation in self._text_requests:
             document_id, label, copy = self._text_requests[generation]
             if document_id in self.documents and not self._closing:
-                if payload.get('type') == 'text':
+                if payload.get('type') == 'ocr' and copy:
+                    self.statusBar().showMessage(tr('選取文字疑似損壞，正在進行 OCR…'))
+                elif payload.get('type') == 'text':
                     extracted = str(payload.get('text', ''))
                     if isValid(label) and label.text_mode:
                         label.set_text_highlights(payload.get('rects', []))
                     if extracted and copy:
                         QApplication.clipboard().setText(extracted)
-                        self.statusBar().showMessage(tr('已複製 {p0} 個字元到剪貼簿', p0=len(extracted)))
+                        if payload.get('ocr_error'):
+                            self.statusBar().showMessage(tr('OCR 未完成，已複製原始文字：{p0}', p0=payload['ocr_error']))
+                        elif payload.get('ocr_used'):
+                            self.statusBar().showMessage(tr('已透過 OCR 複製 {p0} 個字元，請確認辨識結果', p0=len(extracted)))
+                        else:
+                            self.statusBar().showMessage(tr('已複製 {p0} 個字元到剪貼簿', p0=len(extracted)))
                     elif copy:
                         self.statusBar().showMessage(tr('選取範圍沒有可複製的文字'))
                 elif payload.get('type') == 'error':

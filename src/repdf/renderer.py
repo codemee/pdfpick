@@ -111,10 +111,12 @@ class RenderService(QObject):
             self._start_next()
 
     def request_text(self, source: Path, page: int, start: tuple[float, float],
-                     end: tuple[float, float], generation: int, document_id: int) -> None:
+                     end: tuple[float, float], generation: int, document_id: int,
+                     *, allow_ocr: bool = False) -> None:
         payload: dict[str, object] = {
             "type": "copy_text", "source": str(source), "page": page,
             "start": start, "end": end, "generation": generation,
+            "allow_ocr": allow_ocr,
         }
         with self._lock:
             if self._closed:

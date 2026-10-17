@@ -11,8 +11,12 @@ data += [(str(Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath))
 data += copy_metadata("repdf")
 binaries = []
 hiddenimports = []
-for package in ("pypdfium2", "pypdfium2_raw"):
+for package in ("pypdfium2", "pypdfium2_raw", "rapidocr", "onnxruntime"):
     package_data, package_binaries, package_imports = collect_all(package)
+    # Selection already supplies text-line bounds; ship only the recognition model.
+    if package == "rapidocr":
+        package_data = [(source, target) for source, target in package_data
+                        if not source.endswith('.onnx') or Path(source).name == 'PP-OCRv6_rec_small.onnx']
     data += package_data
     binaries += package_binaries
     hiddenimports += package_imports

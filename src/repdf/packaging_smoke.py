@@ -23,6 +23,8 @@ def main(report_path: str) -> int:
         from repdf.preferences import LanguageController
         from repdf.strings import tr
         from repdf.theme import ThemeController
+        from repdf.ocr import _engine
+        from PIL import Image, ImageDraw, ImageFont
         app = QApplication([])
         language = LanguageController("zh")
         if language.qt_translator.isEmpty():
@@ -35,6 +37,12 @@ def main(report_path: str) -> int:
         language.close()
         if load_app_icon().isNull():
             raise RuntimeError("Application icon is missing")
+        ocr_image = Image.new('RGB', (500, 100), 'white')
+        ImageDraw.Draw(ocr_image).text((15, 15), 'Copy this text',
+                                     font=ImageFont.load_default(size=48), fill='black')
+        ocr_result = _engine()(ocr_image)
+        if not ocr_result.txts or ocr_result.txts[0] != 'Copy this text':
+            raise RuntimeError(f"Packaged OCR failed: {ocr_result.txts}")
         with tempfile.TemporaryDirectory(prefix="repdf-smoke-") as directory:
             root = Path(directory)
             source = root / "source.pdf"
@@ -79,7 +87,9 @@ def main(report_path: str) -> int:
             single_pages = split_documents(selections, root / "single.pdf")
             if [int(PdfReader(path).pages[0].mediabox.width) for path in single_pages] != [400, 300, 200]:
                 raise RuntimeError("Multi-document split failed")
-        report.write_text(json.dumps({"ok": True, "version": __version__}), encoding="utf-8")
+        report.write_text(json.dumps({"ok": True, "version": __version__,
+                                      "ocr_engine": "RapidOCR/ONNX Runtime",
+                                      "ocr_text": ocr_result.txts[0]}), encoding="utf-8")
         return 0
     except Exception:
         report.write_text(json.dumps({"ok": False, "error": traceback.format_exc()}), encoding="utf-8")

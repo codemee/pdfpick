@@ -6,10 +6,12 @@ readme = "README.md"
 requires-python = ">=3.11"
 
 dependencies = [
+    "onnxruntime>=1.31.0,<2",
     "pillow>=11.0,<13",
     "pypdf>=5.0,<7",
     "pypdfium2>=4.30,<6",
     "pyside6>=6.8,<7",
+    "rapidocr==3.10.0",
 ]
 
 [project.urls]

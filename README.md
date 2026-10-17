@@ -82,6 +82,8 @@ Fit 與全螢幕優先使用最近點擊且仍可見的頁面；未指定時使�
 
 ## 測試
 
+`OCR` 分支的選取文字 OCR 備援試驗，安裝與限制見 [OCR 說明](docs/OCR.md)。
+
 ```powershell
 uv run pytest
 ```
