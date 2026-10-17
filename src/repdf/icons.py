@@ -17,7 +17,11 @@ def toolbar_icon(kind: str) -> QIcon:
         painter.setPen(QPen(QApplication.palette().color(group, QPalette.ColorRole.ButtonText),
                             1.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
                             Qt.PenJoinStyle.RoundJoin))
-        if kind in ("language_zh", "language_en"):
+        if kind == "more":
+            painter.setBrush(painter.pen().color())
+            for x in (5, 12, 19):
+                painter.drawEllipse(QRectF(x - 1, 11, 2, 2))
+        elif kind in ("language_zh", "language_en"):
             font = QFont(QApplication.font())
             font.setPixelSize(16)
             painter.setFont(font)

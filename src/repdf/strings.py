@@ -5,6 +5,7 @@ from string import Formatter
 
 LANGUAGE = "zh"
 ENGLISH = {
+    "更多工具": "More tools",
     "全螢幕單頁": "Fullscreen single page",
     "全螢幕對頁": "Fullscreen facing pages",
     "全螢幕封面＋對頁": "Fullscreen cover and facing pages",

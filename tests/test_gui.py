@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QImage, QKeySequence
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from pypdf import PdfReader, PdfWriter
@@ -18,6 +18,72 @@ def ready_document(window, path, count, *, zoom=100):
     window.zoom_slider.blockSignals(False)
     window._sync_controls()
     return doc
+
+
+def test_toolbar_overflow_popup_and_resize(qtbot, monkeypatch):
+    monkeypatch.setattr(DocumentView, "_queue_all_renders", lambda self: None)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ready_document(window, Path("sample.pdf"), 2)
+    window.resize(720, 600)
+    window.show()
+    toolbar = window.toolbar
+    qtbot.waitUntil(toolbar.overflow_button.isVisible)
+    assert toolbar.overflow_button.size().width() == 34
+    assert toolbar.overflow_button.size().height() == 34
+    assert toolbar.overflow_button.geometry().bottom() < 42
+    observed = []
+
+    def use_menu():
+        observed.append(toolbar.overflow_menu.isVisible())
+        observed.append(window.theme_action in toolbar.overflow_menu.actions())
+        observed.append(window.spread_action.isEnabled())
+        toolbar.overflow_menu.setActiveAction(window.theme_action)
+        qtbot.keyClick(toolbar.overflow_menu, Qt.Key.Key_Return)
+
+    old_theme = window._theme_controller.mode
+    QTimer.singleShot(100, use_menu)
+    qtbot.mouseClick(toolbar.overflow_button, Qt.MouseButton.LeftButton)
+    qtbot.waitUntil(lambda: window._theme_controller.mode != old_theme)
+    assert observed == [True, True, False]
+    window.resize(320, 240)
+    qtbot.waitUntil(lambda: window.width() == 320 and window.height() == 240)
+    assert toolbar.overflow_button.isVisible()
+    qtbot.waitUntil(lambda: toolbar.overflow_button.geometry().right() < toolbar.width())
+    window.resize(1500, 600)
+    qtbot.waitUntil(lambda: not toolbar.overflow_button.isVisible())
+    assert toolbar.widgetForAction(window.theme_action).isVisible()
+    window.resize(720, 600)
+    qtbot.waitUntil(toolbar.overflow_button.isVisible)
+    toolbar._populate_overflow()
+    assert toolbar.overflow_menu.actions().count(window.theme_action) == 1
+
+
+def test_overflow_controls_share_toolbar_state(qtbot, monkeypatch):
+    from PySide6.QtWidgets import QCheckBox, QSlider
+
+    monkeypatch.setattr(DocumentView, "_queue_all_renders", lambda self: None)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    doc = ready_document(window, Path("sample.pdf"), 4)
+    window.setMinimumWidth(100)
+    window.resize(200, 600)
+    window.show()
+    toolbar = window.toolbar
+    qtbot.waitUntil(toolbar.overflow_button.isVisible)
+    toolbar._populate_overflow()
+    slider = toolbar.overflow_menu.findChild(QSlider)
+    assert slider is not None
+    slider.setValue(125)
+    assert window.zoom_slider.value() == 125
+    assert doc.zoom == 125
+    window.zoom_slider.setValue(75)
+    assert slider.value() == 75
+    checkboxes = toolbar.overflow_menu.findChildren(QCheckBox)
+    assert len(checkboxes) == 2
+    checkboxes[0].click()
+    assert checkboxes[0].checkState() == window.odd_checkbox.checkState()
+    assert window.odd_checkbox.isChecked()
 
 
 def test_drag_preview_animates_and_cancel_restores_order(qtbot, monkeypatch) -> None:

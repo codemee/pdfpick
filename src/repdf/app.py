@@ -35,7 +35,6 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSlider,
-    QToolBar,
     QTabWidget,
     QTabBar,
     QToolButton,
@@ -57,6 +56,7 @@ from repdf.theme import ThemeController
 from repdf.preferences import LanguageController, migrate_preferences
 from repdf.renderer import RenderService, start_render_backend
 from repdf.widgets import PageCard, PageGrid
+from repdf.toolbar import OverflowToolBar
 from repdf.preview import FullscreenPreview
 from repdf.workers import ExportPdfTask, LoadPdfTask
 
@@ -406,7 +406,7 @@ class MainWindow(QMainWindow):
         self._update_window_title()
         self.setWindowIcon(load_app_icon())
         self.resize(1040, 760)
-        self.setMinimumSize(720, 520)
+        self.setMinimumSize(320, 240)
         self.setAcceptDrops(True)
         self.thread_pool = QThreadPool(self)
         self.thread_pool.setMaxThreadCount(4)
@@ -432,6 +432,7 @@ class MainWindow(QMainWindow):
         root = QVBoxLayout(central)
         root.setContentsMargins(12, 10, 12, 12)
         self.empty_label = QLabel(tr('請先開啟 PDF 檔案，或將多個 PDF 拖曳到視窗'))
+        self.empty_label.setWordWrap(True)
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root.addWidget(self.empty_label)
         self.tabs = QTabWidget()
@@ -541,7 +542,7 @@ class MainWindow(QMainWindow):
         self.close_tab_action.setToolTip(tr('關閉目前標籤頁（{p0}）', p0=self.close_shortcut_text))
         self.close_tab_action.triggered.connect(lambda: self.close_tab(self.tabs.currentIndex()))
         self.addAction(self.close_tab_action)
-        self.toolbar = QToolBar(tr('檔案與顯示'), self)
+        self.toolbar = OverflowToolBar(tr('檔案與顯示'), self)
         self.toolbar.setMovable(False)
         self.toolbar.setFloatable(False)
         self.toolbar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
@@ -582,7 +583,7 @@ class MainWindow(QMainWindow):
         self.even_checkbox.setToolTip(tr('選取或取消原始頁碼的雙數頁'))
         self.odd_checkbox.clicked.connect(lambda checked: self._toggle_parity(True, checked))
         self.even_checkbox.clicked.connect(lambda checked: self._toggle_parity(False, checked))
-        self.toolbar.addWidget(selection_controls)
+        self.toolbar.add_overflow_controls(selection_controls, (self.odd_checkbox, self.even_checkbox))
         self.toolbar.addSeparator()
         self.copy_text_action = QAction(tr('複製文字'), self)
         self.copy_text_action.setCheckable(True)
@@ -630,7 +631,7 @@ class MainWindow(QMainWindow):
         self.zoom_display.setToolButtonStyle(
             Qt.ToolButtonStyle.ToolButtonTextOnly
         )
-        self.toolbar.addWidget(self.zoom_slider)
+        self.toolbar.add_overflow_controls(self.zoom_slider, (self.zoom_slider,))
         self.fit_action = QAction("Fit", self)
         self.fit_action.setCheckable(True)
         self.fit_action.setToolTip(tr("Fit：將目前單頁等比例縮放至預覽區，視窗調整時自動適應"))
