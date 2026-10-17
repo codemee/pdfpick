@@ -12,13 +12,13 @@ from pypdf.generic import DecodedStreamObject, NameObject
 
 from repdf import render_worker
 from repdf.app import DocumentView, MainWindow
-from repdf.ocr import OcrError, _clean_line, suspicious_text
+from repdf.ocr import OcrError, _clean_line, _line_regions, suspicious_text
 from test_text_copy import text_pdf
 
 pytestmark = pytest.mark.usefixtures('qapp')
 
 
-def damaged_pdf(path):
+def damaged_pdf(path, *, lines=('Copy this text',), point_size=24):
     # Use a real embedded font: PDFium can repair simple Helvetica mappings itself.
     family = 'Arial'
     for location in ('C:/Windows/Fonts/arial.ttf', '/System/Library/Fonts/Supplemental/Arial.ttf',
@@ -35,8 +35,9 @@ def damaged_pdf(path):
     pdf.setPageSize(QPageSize(QSizeF(300, 400), QPageSize.Unit.Point))
     pdf.setPageMargins(QMarginsF(0, 0, 0, 0))
     painter = QPainter(pdf)
-    painter.setFont(QFont(family, 24))
-    painter.drawText(QPointF(40, 100), 'Copy this text')
+    painter.setFont(QFont(family, point_size))
+    for row, line in enumerate(lines):
+        painter.drawText(QPointF(40, 100 + row * point_size * 1.5), line)
     painter.end()
     del pdf
     writer = PdfWriter(clone_from=path)
@@ -63,6 +64,15 @@ def test_explicit_corruption_triggers_ocr(text):
 
 def test_cjk_cleanup_keeps_english_word_boundaries():
     assert _clean_line('把 現在 的 文件 README file') == '把現在的文件 README file'
+
+
+def test_line_regions_keep_dashes_and_underscores_with_text():
+    # A list marker comes first; an underscore sits below the letters without
+    # overlapping them. Both must stay in their text line, not become OCR rows.
+    rects = [[.08, .20999, .09, .21], [.1, .205, .12, .207], [.13, .2, .2, .21],
+             [.20, .211, .21, .212], [.21, .2, .3, .21],
+             [.1, .235, .12, .237], [.13, .23, .3, .24]]
+    assert _line_regions(rects) == [[.08, .2, .3, .212], [.1, .23, .3, .24]]
 
 
 def test_ocr_runs_only_for_damaged_final_selection(tmp_path, monkeypatch):
@@ -138,6 +148,22 @@ def test_rapidocr_recovers_damaged_mapping_offline(tmp_path, monkeypatch):
     assert result['text'] == 'Copy this text'
 
 
+def test_ocr_multiline_list_keeps_filename_underscores_and_markers(tmp_path):
+    source = tmp_path / 'list.pdf'
+    lines = ('Copy this text', ' - tkinter_basic.py: Tkinter',
+             ' - tkinter_ttk.py: Tkinter.ttk',
+             ' - customtkinter_demo.py: CustomTkinter',
+             ' - pyside6_demo.py: PySide6', 'Common requirements:')
+    damaged_pdf(source, lines=lines, point_size=9)
+    result = render_worker.extract_selection_result(source, 0, [0, .18], [1, .45], allow_ocr=True)
+    assert result.get('ocr_used'), result
+    assert len(_line_regions(result['rects'])) == len(lines)
+    recognized = result['text'].splitlines()
+    assert len(recognized) == len(lines)
+    for actual, expected in zip(recognized, lines):
+        assert actual.replace(' ', '') == expected.replace(' ', '')
+
+
 def test_ocr_clipboard_roundtrip_in_background(qtbot, tmp_path, monkeypatch):
     # An external OCR executable cannot be found by the background process.
     monkeypatch.setenv('PATH', '')
@@ -170,7 +196,7 @@ def test_low_confidence_ocr_preserves_original(tmp_path, monkeypatch):
     from repdf import ocr
     source = tmp_path / 'damaged.pdf'
     damaged_pdf(source)
-    monkeypatch.setattr(ocr, '_engine', lambda: lambda image: SimpleNamespace(txts=('wrong',), scores=(0.4,)))
+    monkeypatch.setattr(ocr, '_engine', lambda: lambda image, **kwargs: SimpleNamespace(txts=('wrong',), scores=(0.4,)))
     result = render_worker.extract_selection_result(source, 0, [.12, .22], [.78, .27], allow_ocr=True)
     assert suspicious_text(result['text'])
     assert 'low confidence' in result['ocr_error']

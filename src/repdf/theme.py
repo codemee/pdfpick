@@ -92,7 +92,7 @@ class ThemeController(QObject):
                            border-radius: 4px; padding: 4px; color: palette(button-text); }}
             QToolButton:hover {{ background: {hover}; }}
             QToolButton:pressed {{ background: {pressed}; }}
-            QToolButton#copyTextTool:checked {{ background: {selected_tool};
+            QToolButton#copyTextTool:checked, QToolButton#regionOcrTool:checked {{ background: {selected_tool};
                                                 border-color: {slider_fill}; }}
             QToolButton:focus {{ border-color: {slider_fill}; }}
             QToolButton:disabled {{ color: {disabled}; background: transparent; }}

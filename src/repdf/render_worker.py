@@ -8,7 +8,7 @@ from typing import TextIO
 
 import pypdfium2 as pdfium
 
-from repdf.ocr import OcrError, recognize_selection, suspicious_text
+from repdf.ocr import OcrError, recognize_region, recognize_selection, suspicious_text
 
 
 def render_document(
@@ -148,7 +148,22 @@ def serve(
         request: dict[str, object] = {}
         try:
             request = json.loads(line)
-            if request.get("type") == "copy_text":
+            if request.get('type') == 'ocr_region':
+                document = pdfium.PdfDocument(str(request['source']))
+                try:
+                    page_index = int(request['page'])
+                    if not 0 <= page_index < len(document):
+                        raise ValueError('Invalid OCR page index')
+                    page = document[page_index]
+                    try:
+                        extracted = recognize_region(page, request['start'], request['end'])
+                    finally:
+                        page.close()
+                finally:
+                    document.close()
+                print(json.dumps({'type': 'text', 'generation': int(request['generation']),
+                                  **extracted}), file=output_stream, flush=True)
+            elif request.get("type") == "copy_text":
                 extracted = extract_selection_result(Path(request["source"]), int(request["page"]),
                     request["start"], request["end"], allow_ocr=bool(request.get('allow_ocr', False)),
                     on_ocr=lambda: print(json.dumps({'type': 'ocr', 'generation': int(request['generation'])}),

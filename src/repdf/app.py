@@ -150,7 +150,7 @@ class DocumentView(QWidget):
         width = self._target_preview_width()
         for page_index in range(self.page_count):
             card = PageCard(page_index, width)
-            card.set_text_copy_mode(self.owner.copy_text_action.isChecked())
+            card.set_text_copy_mode(self.owner._selection_active(), region=self.owner.region_ocr_action.isChecked())
             card.selection_changed.connect(self._page_selection_changed)
             card.reorder_requested.connect(self._move_page)
             card.focused.connect(self._focus_page)
@@ -192,7 +192,7 @@ class DocumentView(QWidget):
 
     @Slot(int, int)
     def _insert_page(self, source_index: int, insertion: int) -> None:
-        if self.owner._export_running or self.owner.copy_text_action.isChecked() or source_index not in self.page_order:
+        if self.owner._export_running or self.owner._selection_active() or source_index not in self.page_order:
             return
         self.page_order.remove(source_index)
         self.page_order.insert(insertion, source_index)
@@ -203,7 +203,7 @@ class DocumentView(QWidget):
 
     @Slot(int, int)
     def _move_page(self, source_index: int, target_index: int) -> None:
-        if self.owner._export_running or self.owner.copy_text_action.isChecked() or source_index == target_index:
+        if self.owner._export_running or self.owner._selection_active() or source_index == target_index:
             return
         if source_index not in self.page_order or target_index not in self.page_order:
             return
@@ -546,6 +546,12 @@ class MainWindow(QMainWindow):
         self.copy_text_action.toggled.connect(self._set_copy_text_mode)
         self.toolbar.addAction(self.copy_text_action)
         self.toolbar.widgetForAction(self.copy_text_action).setObjectName('copyTextTool')
+        self.region_ocr_action = QAction(tr('區域 OCR'), self)
+        self.region_ocr_action.setCheckable(True)
+        self.region_ocr_action.setToolTip(tr('區域 OCR：框選頁面或圖片中的區域，放開滑鼠後辨識並複製文字。'))
+        self.region_ocr_action.toggled.connect(self._set_region_ocr_mode)
+        self.toolbar.addAction(self.region_ocr_action)
+        self.toolbar.widgetForAction(self.region_ocr_action).setObjectName('regionOcrTool')
 
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -618,6 +624,7 @@ class MainWindow(QMainWindow):
     def _refresh_toolbar_icons(self) -> None:
         for action, kind in ((self.open_action, "open"), (self.export_action, "export"),
                              (self.split_action, "split"), (self.copy_text_action, "copy_text"),
+                             (self.region_ocr_action, "ocr_region"),
                              (self.fit_action, "fit"),
                              (self.fullscreen_action, "fullscreen"),
                              (self.spread_action, "fullscreen_spread"),
@@ -697,20 +704,42 @@ class MainWindow(QMainWindow):
         if doc is not None and doc.ready:
             doc.fit_page()
 
+    def _selection_active(self) -> bool:
+        return self.copy_text_action.isChecked() or self.region_ocr_action.isChecked()
+
     def _set_copy_text_mode(self, enabled: bool) -> None:
+        if enabled:
+            self.region_ocr_action.blockSignals(True)
+            self.region_ocr_action.setChecked(False)
+            self.region_ocr_action.blockSignals(False)
+        self._sync_selection_modes()
+
+    def _set_region_ocr_mode(self, enabled: bool) -> None:
+        if enabled:
+            self.copy_text_action.blockSignals(True)
+            self.copy_text_action.setChecked(False)
+            self.copy_text_action.blockSignals(False)
+        self._sync_selection_modes()
+
+    def _sync_selection_modes(self) -> None:
+        enabled = self._selection_active()
+        region = self.region_ocr_action.isChecked()
         for doc in self.documents.values():
             doc.grid_host.finish_drag()
             for card in doc.page_cards:
-                card.set_text_copy_mode(enabled)
+                card.set_text_copy_mode(enabled, region=region)
         if self._fullscreen_preview is not None:
             for label in self._fullscreen_preview.labels.values():
-                label.set_text_mode(enabled)
+                label.set_text_mode(enabled, region=region)
         self._text_requests.clear()
 
     def _copy_text_selection(self, doc, page_index, label, start, end, *, copy=True) -> None:
-        if not self.copy_text_action.isChecked() or doc.document_id not in self.documents:
+        if not self._selection_active() or doc.document_id not in self.documents:
             return
         if label.pixmap().isNull() or label.width() < 1 or label.height() < 1:
+            return
+        region = self.region_ocr_action.isChecked()
+        if region and not copy:
             return
         self._next_generation += 1
         generation = self._next_generation
@@ -723,10 +752,10 @@ class MainWindow(QMainWindow):
             (start.x() / label.width(), start.y() / label.height()),
             (end.x() / label.width(), end.y() / label.height()),
             generation, -1_000_000 - doc.document_id,
-            allow_ocr=copy,
+            allow_ocr=copy, region_ocr=region,
         )
         if copy:
-            self.statusBar().showMessage(tr('正在擷取文字…'))
+            self.statusBar().showMessage(tr('正在辨識選取區域…') if region else tr('正在擷取文字…'))
 
     def _show_fullscreen_preview(self, mode="single") -> None:
         doc = self.current_document()
@@ -800,6 +829,7 @@ class MainWindow(QMainWindow):
         self.spread_action.setEnabled(available)
         self.cover_action.setEnabled(available)
         self.copy_text_action.setEnabled(available)
+        self.region_ocr_action.setEnabled(available)
         self.zoom_out_action.setEnabled(zoom > 25)
         self.zoom_in_action.setEnabled(zoom < 200)
         enabled = bool(self.output_selection()) and not self._export_running

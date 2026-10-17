@@ -47,6 +47,7 @@ uv run repdf
 | <img src="docs/images/toolbar-odd.png" height="22" alt="單數頁核取方塊"> | 單數頁 | 選取或取消目前標籤的原始單數頁；部分選取時顯示三態標記。 | — |
 | <img src="docs/images/toolbar-even.png" height="22" alt="雙數頁核取方塊"> | 雙數頁 | 選取或取消目前標籤的原始雙數頁；部分選取時顯示三態標記。 | — |
 | <img src="docs/images/toolbar-copy-text.png" width="24" alt="複製文字圖示"> | 複製文字 | 點擊切換文字模式，啟用時按鈕會顯示選取底色。拖曳時實際選到的字會以螢光筆標示；放開滑鼠即複製到剪貼簿。關閉後恢復拖放排序；掃描影像需先經 OCR。全螢幕預覽也適用。 | — |
+| 框內 A 圖示 | 區域 OCR | 與複製文字模式互斥。拖曳矩形框選頁面或圖片，放開滑鼠後辨識並複製文字；一般與全螢幕預覽皆可使用。空白範圍保留原剪貼簿。 | — |
 | <img src="docs/images/toolbar-zoom.png" width="160" alt="顯示比例與縮放滑桿"> | 顯示比例 | 滑桿調整 25%–200%；點擊比例回到 100%。鍵盤縮放每次調整 25 個百分點，完整說明在比例的 tooltip。 | 放大：Ctrl++／Ctrl+=；縮小：Ctrl+-；100%：Ctrl+0 |
 | <img src="docs/images/toolbar-fit.png" width="24" alt="Fit 圖示"> | Fit | 將目前單頁等比例縮放至預覽區；調整視窗大小時自動適應。拖動滑桿或使用縮放快捷鍵會回到手動比例。 | — |
 | <img src="docs/images/toolbar-fullscreen.png" width="24" alt="全螢幕單頁圖示"> | 全螢幕單頁 | 每次顯示一頁，依螢幕寬度或高度等比例填滿；可用頁面上方的核取方塊選頁。 | F11 開啟／返回；Esc 返回 |

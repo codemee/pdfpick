@@ -13,10 +13,11 @@ binaries = []
 hiddenimports = []
 for package in ("pypdfium2", "pypdfium2_raw", "rapidocr", "onnxruntime"):
     package_data, package_binaries, package_imports = collect_all(package)
-    # Selection already supplies text-line bounds; ship only the recognition model.
+    # Region OCR also needs detection; direction classification is unused.
     if package == "rapidocr":
         package_data = [(source, target) for source, target in package_data
-                        if not source.endswith('.onnx') or Path(source).name == 'PP-OCRv6_rec_small.onnx']
+                        if not source.endswith('.onnx') or Path(source).name in
+                        {'PP-OCRv6_rec_small.onnx', 'PP-OCRv6_det_small.onnx'}]
     data += package_data
     binaries += package_binaries
     hiddenimports += package_imports

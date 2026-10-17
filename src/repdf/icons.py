@@ -53,6 +53,15 @@ def toolbar_icon(kind: str) -> QIcon:
                            ((21, 16), (21, 21), (16, 21)), ((8, 21), (3, 21), (3, 16))):
                 painter.drawPolyline(QPolygonF([QPointF(x, y) for x, y in points]))
             painter.drawRect(QRectF(8, 6, 8, 12))
+        elif kind == "ocr_region":
+            for points in (((3, 8), (3, 3), (8, 3)), ((16, 3), (21, 3), (21, 8)),
+                           ((21, 16), (21, 21), (16, 21)), ((8, 21), (3, 21), (3, 16))):
+                painter.drawPolyline(QPolygonF([QPointF(x, y) for x, y in points]))
+            font = QFont(QApplication.font())
+            font.setPixelSize(12)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.drawText(QRectF(5, 4, 14, 16), Qt.AlignmentFlag.AlignCenter, 'A')
         elif kind == "copy_text":
             painter.drawLine(3, 4, 18, 4)
             painter.drawLine(3, 8, 16, 8)

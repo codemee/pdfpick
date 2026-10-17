@@ -112,9 +112,9 @@ class RenderService(QObject):
 
     def request_text(self, source: Path, page: int, start: tuple[float, float],
                      end: tuple[float, float], generation: int, document_id: int,
-                     *, allow_ocr: bool = False) -> None:
+                     *, allow_ocr: bool = False, region_ocr: bool = False) -> None:
         payload: dict[str, object] = {
-            "type": "copy_text", "source": str(source), "page": page,
+            "type": "ocr_region" if region_ocr else "copy_text", "source": str(source), "page": page,
             "start": start, "end": end, "generation": generation,
             "allow_ocr": allow_ocr,
         }

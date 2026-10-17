@@ -66,7 +66,7 @@ class FullscreenPreview(QWidget):
             self.images[index] = self.document.page_cards[index].preview.pixmap().toImage()
             label = PagePreviewLabel('', draggable=False)
             label.setParent(self)
-            label.set_text_mode(self.owner.copy_text_action.isChecked())
+            label.set_text_mode(self.owner._selection_active(), region=self.owner.region_ocr_action.isChecked())
             label.text_selected.connect(
                 lambda start, end, page=index, preview=label:
                 self.owner._copy_text_selection(self.document, page, preview, start, end))

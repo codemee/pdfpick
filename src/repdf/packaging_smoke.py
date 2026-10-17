@@ -23,7 +23,8 @@ def main(report_path: str) -> int:
         from repdf.preferences import LanguageController
         from repdf.strings import tr
         from repdf.theme import ThemeController
-        from repdf.ocr import _engine
+        from repdf.ocr import _engine, recognize_region
+        import pypdfium2 as pdfium
         from PIL import Image, ImageDraw, ImageFont
         app = QApplication([])
         language = LanguageController("zh")
@@ -45,6 +46,19 @@ def main(report_path: str) -> int:
             raise RuntimeError(f"Packaged OCR failed: {ocr_result.txts}")
         with tempfile.TemporaryDirectory(prefix="repdf-smoke-") as directory:
             root = Path(directory)
+            ocr_source = root / 'ocr-image.pdf'
+            ocr_image.save(ocr_source, 'PDF', resolution=72)
+            ocr_document = pdfium.PdfDocument(ocr_source)
+            try:
+                ocr_page = ocr_document[0]
+                try:
+                    region_result = recognize_region(ocr_page, [0, 0], [1, 1])
+                finally:
+                    ocr_page.close()
+            finally:
+                ocr_document.close()
+            if region_result['text'] != 'Copy this text':
+                raise RuntimeError(f"Packaged region OCR failed: {region_result['text']}")
             source = root / "source.pdf"
             writer = PdfWriter()
             for width in (200, 300):
