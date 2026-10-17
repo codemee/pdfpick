@@ -495,6 +495,80 @@ def test_close_loading_document_ignores_delayed_result(qtbot, tmp_path) -> None:
     assert not window.documents
 
 
+def test_tab_shortcuts_cycle_current_order_from_toolbar_and_preview(qtbot, monkeypatch, tmp_path):
+    monkeypatch.setattr(DocumentView, '_queue_all_renders', lambda self: None)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    docs = [ready_document(window, tmp_path / f'{name}.pdf', 1) for name in ('a', 'b', 'c')]
+    window.tabs.tabBar().moveTab(2, 0)
+    assert window.ordered_documents() == [docs[2], docs[0], docs[1]]
+    window.show()
+    window.activateWindow()
+    window.tabs.setCurrentIndex(2)
+    window.zoom_slider.setFocus()
+    qtbot.waitUntil(window.isActiveWindow)
+    qtbot.keySequence(window.zoom_slider, window.next_tab_action.shortcuts()[0])
+    assert window.current_document() is docs[2]
+    assert window.zoom_slider.value() == 100
+    # Shift+Tab is delivered as Backtab on some platforms/keyboards.
+    qtbot.keySequence(window.zoom_slider, window.previous_tab_action.shortcuts()[0])
+    assert window.current_document() is docs[1]
+    window.tabs.setCurrentIndex(0)
+    checkbox = docs[2].page_cards[0].checkbox
+    checkbox.setFocus()
+    if QKeySequence('Ctrl+Tab') in window.next_tab_action.shortcuts():
+        qtbot.keyClick(checkbox, Qt.Key.Key_Tab,
+                      Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+    else:
+        qtbot.keySequence(checkbox, window.previous_tab_action.shortcuts()[0])
+    assert window.current_document() is docs[1]
+    checkbox = docs[1].page_cards[0].checkbox
+    checkbox.setFocus()
+    qtbot.keySequence(checkbox, window.next_tab_action.shortcuts()[0])
+    assert window.current_document() is docs[2]
+    assert not docs[2].selected_pages
+
+
+def test_tab_cycle_with_zero_one_or_closed_tabs(qtbot, monkeypatch, tmp_path):
+    monkeypatch.setattr(DocumentView, '_queue_all_renders', lambda self: None)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.next_tab_action.trigger()
+    window.previous_tab_action.trigger()
+    assert window.tabs.count() == 0
+    first = ready_document(window, tmp_path / 'a.pdf', 1)
+    window.next_tab_action.trigger()
+    window.previous_tab_action.trigger()
+    assert window.current_document() is first
+    second = ready_document(window, tmp_path / 'b.pdf', 1)
+    third = ready_document(window, tmp_path / 'c.pdf', 1)
+    window.close_tab(window.tabs.indexOf(second))
+    window.tabs.setCurrentWidget(third)
+    window.next_tab_action.trigger()
+    assert window.current_document() is first
+    window.previous_tab_action.trigger()
+    assert window.current_document() is third
+
+
+def test_ctrl_shift_tab_from_toolbar_handles_tab_and_backtab(qtbot, monkeypatch, tmp_path):
+    monkeypatch.setattr(DocumentView, '_queue_all_renders', lambda self: None)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    docs = [ready_document(window, tmp_path / f'{name}.pdf', 1) for name in ('a', 'b', 'c')]
+    window.show()
+    window.activateWindow()
+    qtbot.waitUntil(window.isActiveWindow)
+    for key in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
+        window.tabs.setCurrentIndex(0)
+        window.zoom_slider.setFocus()
+        qtbot.keyClick(window.zoom_slider, key,
+                      Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+        assert window.current_document() is docs[-1], key
+        qtbot.keyClick(window.zoom_slider, key,
+                      Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+        assert window.current_document() is docs[1], key
+
+
 def test_real_multi_file_previews_survive_rapid_switch_and_zoom(qtbot, tmp_path) -> None:
     paths = []
     for name, width in (("a", 180), ("b", 300)):

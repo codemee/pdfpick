@@ -8,7 +8,7 @@ on:
       tag:
         description: GitHub release tag to publish
         required: true
-        default: v0.0.9
+        default: v0.0.11
         type: string
 
 permissions:
@@ -28,18 +28,25 @@ jobs:
       name: pypi
       url: https://pypi.org/project/repdf/
     permissions:
-      contents: read
+      contents: write
       id-token: write
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
       - name: Install uv
         uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
           version: "0.12.18"
-      - name: Download GitHub release distributions
+      - name: Verify release version
         run: |
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "*.whl" --pattern "*.tar.gz" --dir dist
+          uv run --no-project --python 3.12 python -c 'import os, tomllib; from pathlib import Path; version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]; assert os.environ["RELEASE_TAG"] == "v" + version, (os.environ["RELEASE_TAG"], version)'
+      - name: Build release distributions
+        run: uv build
+      - name: Attach distributions to GitHub Release
+        run: gh release upload "$RELEASE_TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
       - name: Publish to PyPI
         run: uv publish --trusted-publishing always --check-url https://pypi.org/simple/ dist/*

@@ -62,6 +62,10 @@ Fit 與全螢幕優先使用最近點擊且仍可見的頁面；未指定時使�
 
 方向鍵及 Page Up／Page Down 固定操作預覽區，即使縮放滑桿有焦點也不會改變比例：一般預覽時方向鍵捲動、Page Up／Page Down 捲動一個畫面；Fit 時從目前可見頁面依順序切換上一頁／下一頁，第一頁與最後一頁不會越界，反向按一次即可切頁。全螢幕時左／上／Page Up 顯示上一頁或上一組，右／下／Page Down 顯示下一頁或下一組。對頁以同一比例完整顯示兩頁，最後剩一頁時單獨顯示。
 
+Home／End 依目前頁面排列順序跳至第一頁／最後一頁；一般預覽、Fit 與全螢幕皆適用，焦點在縮放滑桿或頁面核取方塊上也可操作。全螢幕對頁及封面＋對頁模式則跳至第一組／最後一組。
+
+主視窗可使用平台慣用的標籤頁切換快捷鍵（Windows／Linux：Ctrl+Tab 下一個、Ctrl+Shift+Tab 上一個），依目前標籤排列順序循環切換；最後一個的下一個為第一個，第一個的上一個為最後一個。焦點在預覽、頁面核取方塊或工具列控制項上也可使用。
+
 全螢幕的核取方塊會同步主視窗的選頁，返回後即可重組或拆分，原有縮放比例保留。核取方塊取得焦點後也可用空白鍵勾選。
 
 點選各頁左上角的核取方塊可個別選頁。拖曳頁面縮圖或「拖曳排序」把手時，縮圖會跟隨游標，其他頁面以動畫移開並顯示插入空位。移到頁面左半部可插入其前方，右半部可插入其後方；放開確認排序，按 Esc 取消。
@@ -83,7 +87,7 @@ Fit 與全螢幕優先使用最近點擊且仍可見的頁面；未指定時使�
 
 ## 測試
 
-`OCR` 分支的選取文字 OCR 備援試驗，安裝與限制見 [OCR 說明](docs/OCR.md)。
+文字選取的 OCR 備援與手動區域辨識，操作與限制見 [OCR 說明](docs/OCR.md)。
 
 ```powershell
 uv run pytest
@@ -95,10 +99,10 @@ uv run pytest
 
 ## Windows 執行檔與 macOS App／DMG
 
-GitHub Actions 的「Build desktop apps」會在 main 更新、PR 或 Release 發佈時打包，也可在 Actions 頁面以 Run workflow 手動執行並指定分支或標籤。Release 的標籤必須包含打包設定檔。
+GitHub Actions 的「Build desktop apps」在 Release 發佈時打包，也可在 Actions 頁面以 Run workflow 手動執行並指定分支或標籤；填入 `release_tag` 時會依該標籤建置並附加到指定 Release。一般開發只執行原始碼與測試，不在本機打包。Release 的標籤必須包含打包設定檔。
 
-產物包含 Windows x86_64 單一 EXE、macOS Apple Silicon（arm64）DMG，以及 SHA256 校驗檔。手動執行與一般提交的產物可從 Actions 的 Artifacts 下載；Release 發佈時會自動附加到該 Release。DMG 中可將 RePDF.app 拖入 Applications，不需要另外安裝 Python。
+產物包含 Windows x86_64 單一 EXE、macOS Apple Silicon（arm64）DMG，以及 SHA256 校驗檔。手動執行的產物可從 Actions 的 Artifacts 下載；Release 發佈時會自動附加到該 Release。DMG 中可將 RePDF.app 拖入 Applications，不需要另外安裝 Python。OCR 執行環境與模型皆隨桌面套件提供。
 
 目前未設定 Windows 程式碼簽章或 macOS Developer ID 簽章／公證，因此下載後可能出現系統的安全提示；這些套件並非已公證的 macOS 發行版。
 
-打包全程在 GitHub 雲端環境執行。流程會先驗證 Qt、圖示、背景 PDF 渲染與重排輸出；macOS 使用系統內建的 ditto 與 hdiutil 建立並驗證 DMG。Actions 產物保留 30 天。
+打包全程在 GitHub 雲端環境執行。流程會先驗證 Qt、圖示、OCR、背景 PDF 渲染與重排輸出；macOS 使用系統內建的 ditto 與 hdiutil 建立並驗證 DMG。Actions 產物保留 30 天。「Publish to PyPI」也在雲端依版本標籤建置 wheel 與原始碼套件，上傳 Release 後發布至 PyPI。

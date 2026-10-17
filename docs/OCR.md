@@ -1,6 +1,6 @@
-# OCR 分支試驗
+# OCR 文字擷取
 
-此分支提供文字選取的 OCR 備援與手動區域 OCR；辨識結果只複製到剪貼簿，不變更 PDF。
+提供文字選取的 OCR 備援與手動區域 OCR；辨識結果只複製到剪貼簿，不變更 PDF。
 
 ## 操作
 
@@ -28,7 +28,7 @@ uv sync
 uv run repdf
 ```
 
-不需要安裝 Tesseract，也不需要另行下載模型。已安裝的 Tesseract 與舊模型不再被此分支使用。
+不需要安裝 Tesseract，也不需要另行下載模型。已安裝的 Tesseract 與舊模型不再使用。
 
 `rapidocr==3.10.0` 的 Python wheel 內附 `PP-OCRv6_rec_small.onnx`，辨識模型約 20.3 MiB，包含中英文辨識字典；區域 OCR 另使用內附的 `PP-OCRv6_det_small.onnx`，約 9.5 MiB。使用明確本機模型路徑並檢查 SHA256，不使用預設模型自動下載流程。執行時不連線傳送 PDF。
 
@@ -42,9 +42,7 @@ uv run repdf
 
 Windows EXE 與 macOS App／DMG 需分別在對應平台建置。封裝自我檢查加入實際 OCR 推論，避免僅確認 import 成功。
 
-```sh
-uv run --group build python scripts/build_desktop.py
-```
+發布新版本時由 GitHub Actions 在雲端執行建置與封裝自我檢查；一般開發只從原始碼執行與測試。
 
 ## 驗證
 

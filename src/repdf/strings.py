@@ -13,6 +13,8 @@ ENGLISH = {
     "全螢幕封面＋對頁：第一頁單獨顯示，其餘兩頁並排；Esc 結束，方向鍵／Page Up／Page Down 切頁，可勾選頁面": "Fullscreen cover and facing pages: first page alone, then pairs; Esc to exit, arrows / Page Up / Page Down to navigate; check pages to select",
     "Fit：將目前單頁等比例縮放至預覽區，視窗調整時自動適應": "Fit: scale the current page to fit the preview area; adapt when the window is resized",
     "複製文字": "Copy text",
+    "下一個標籤頁": "Next tab",
+    "上一個標籤頁": "Previous tab",
     "複製文字：點擊切換；啟用後在頁面拖曳選取文字並複製到剪貼簿，停用後恢復拖放排序。掃描影像中的文字需先經過 OCR。": "Copy text: click to toggle. Drag across a page to select text and copy it to the clipboard; turn off to restore page reordering. Scanned images need OCR first.",
     "拖曳選取文字並複製到剪貼簿": "Drag to select text and copy it to the clipboard",
     "文字複製模式中無法拖放頁面": "Page dragging is unavailable in text-copy mode",

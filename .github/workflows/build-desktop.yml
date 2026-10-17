@@ -1,9 +1,6 @@
 name: Build desktop apps
 
 on:
-  push:
-    branches: [main]
-  pull_request:
   release:
     types: [published]
   workflow_dispatch:
@@ -12,6 +9,11 @@ on:
         description: Branch or tag to build
         default: main
         required: true
+        type: string
+      release_tag:
+        description: Existing release tag to build and attach packages to (optional)
+        required: false
+        default: ""
         type: string
 
 permissions:
@@ -33,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.release.tag_name || inputs.ref || github.sha }}
+          ref: ${{ github.event.release.tag_name || inputs.release_tag || inputs.ref || github.sha }}
       - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
         with:
           version: "0.12.18"
@@ -53,7 +55,7 @@ jobs:
           retention-days: 30
 
   upload-release:
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || inputs.release_tag != ''
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -67,5 +69,5 @@ jobs:
       - name: Attach desktop packages to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
         run: gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber

@@ -161,6 +161,52 @@ def test_navigation_keys_control_preview_when_slider_has_focus(qtbot, tmp_path):
     assert doc.fit_mode
 
 
+@pytest.mark.parametrize('fit', [False, True])
+def test_home_end_follow_reordered_pages_with_slider_focus(qtbot, tmp_path, fit):
+    source = tmp_path / 'home-end.pdf'
+    make_pdf(source, [(595, 842)] * 5)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    window.load_pdf(source)
+    doc = window.current_document()
+    wait_for_preview(qtbot, doc)
+    doc.page_order = [3, 1, 4, 0, 2]
+    doc._reflow_grid()
+    if fit:
+        window.fit_action.trigger()
+        wait_for_preview(qtbot, doc)
+    zoom = doc.zoom
+    window.zoom_slider.setFocus()
+    qtbot.keyClick(window.zoom_slider, Qt.Key.Key_End)
+    if fit:
+        wait_for_preview(qtbot, doc)
+        qtbot.waitUntil(lambda: not doc._fit_navigation_pending)
+        assert doc.fit_page_index == 2
+    else:
+        vertical = doc.scroll_area.verticalScrollBar()
+        assert vertical.value() == min(doc.page_cards[2].y(), vertical.maximum())
+    assert doc.preview_page_index() == 2
+    assert doc.focused_page == 2
+    qtbot.keyClick(window.zoom_slider, Qt.Key.Key_Home)
+    if fit:
+        wait_for_preview(qtbot, doc)
+        qtbot.waitUntil(lambda: not doc._fit_navigation_pending)
+        assert doc.fit_page_index == 3
+        # Repeated/rapid jumps must not leave navigation anchored to an old page.
+        qtbot.keyClick(window.zoom_slider, Qt.Key.Key_End)
+        qtbot.keyClick(window.zoom_slider, Qt.Key.Key_PageUp)
+        assert doc.fit_page_index == 0
+        qtbot.keyClick(window.zoom_slider, Qt.Key.Key_Home)
+        wait_for_preview(qtbot, doc)
+        qtbot.waitUntil(lambda: not doc._fit_navigation_pending)
+    else:
+        assert doc.scroll_area.verticalScrollBar().value() == doc.scroll_area.verticalScrollBar().minimum()
+    assert doc.preview_page_index() == 3
+    assert doc.focused_page == 3
+    assert doc.zoom == zoom
+
+
 def test_fit_navigation_uses_visible_last_page_and_clamps_boundaries(qtbot, tmp_path):
     source = tmp_path / "boundary.pdf"
     make_pdf(source, [(595, 842)] * 3)
@@ -261,6 +307,13 @@ def test_fullscreen_modes_follow_order_and_sync_selection(qtbot, tmp_path, monke
         assert label.geometry().bottom() < viewer.height()
         assert viewer.checkboxes[index].geometry().bottom() < label.y()
     # Navigation works even while the page checkbox has keyboard focus.
+    qtbot.keyClick(viewer.checkboxes[3], Qt.Key.Key_End)
+    assert viewer.visible_pages == groups[-1]
+    last_label = viewer.label
+    qtbot.keyClick(viewer, Qt.Key.Key_End)
+    assert viewer.label is last_label
+    qtbot.keyClick(viewer.checkboxes[groups[-1][0]], Qt.Key.Key_Home)
+    assert viewer.visible_pages == groups[0]
     qtbot.keyClick(viewer.checkboxes[3], Qt.Key.Key_PageDown)
     assert viewer.visible_pages == groups[1]
     assert viewer.render_generation == -1

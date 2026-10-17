@@ -181,6 +181,11 @@ class FullscreenPreview(QWidget):
         if key in (Qt.Key.Key_Escape, Qt.Key.Key_F11):
             self.close()
             return True
+        if key in (Qt.Key.Key_Home, Qt.Key.Key_End):
+            position = 0 if key == Qt.Key.Key_Home else len(self.groups) - 1
+            if position != self.group_index:
+                self.show_page(self.groups[position][0])
+            return True
         previous = (Qt.Key.Key_Left, Qt.Key.Key_Up, Qt.Key.Key_PageUp)
         following = (Qt.Key.Key_Right, Qt.Key.Key_Down, Qt.Key.Key_PageDown)
         if key in previous + following:

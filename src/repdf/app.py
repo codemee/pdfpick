@@ -453,8 +453,22 @@ class MainWindow(QMainWindow):
         QApplication.instance().installEventFilter(self)
 
     def eventFilter(self, watched, event) -> bool:
+        if (not self._closing and isinstance(watched, QWidget) and watched.window() is self
+                and event.type() in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress)):
+            control = Qt.KeyboardModifier.MetaModifier if sys.platform == 'darwin' else Qt.KeyboardModifier.ControlModifier
+            modifiers = event.modifiers()
+            if (event.key() in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab)
+                    and modifiers in (control, control | Qt.KeyboardModifier.ShiftModifier)):
+                # Claim both native representations before child widgets use
+                # Shift+Tab for focus traversal or Qt's shortcut normalization.
+                if event.type() == QEvent.Type.ShortcutOverride:
+                    event.accept()
+                else:
+                    reverse = event.key() == Qt.Key.Key_Backtab or bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
+                    self._cycle_tab(-1 if reverse else 1)
+                return True
         keys = (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Up, Qt.Key.Key_Down,
-                Qt.Key.Key_PageUp, Qt.Key.Key_PageDown)
+                Qt.Key.Key_PageUp, Qt.Key.Key_PageDown, Qt.Key.Key_Home, Qt.Key.Key_End)
         if (not self._closing and isinstance(watched, QWidget) and watched.window() is self
                 and event.type() == QEvent.Type.KeyPress and not event.modifiers()
                 and event.key() in keys):
@@ -464,7 +478,23 @@ class MainWindow(QMainWindow):
 
     def _navigate_preview(self, key) -> None:
         doc = self.current_document()
-        if doc is None or not doc.ready:
+        if doc is None or not doc.ready or not doc.page_order:
+            return
+        if key in (Qt.Key.Key_Home, Qt.Key.Key_End):
+            first = key == Qt.Key.Key_Home
+            index = doc.page_order[0 if first else -1]
+            doc.focused_page = index
+            if doc.fit_mode:
+                doc.fit_page_index = index
+                doc._fit_navigation_pending = True
+                doc._apply_fit()
+            else:
+                vertical = doc.scroll_area.verticalScrollBar()
+                card = doc.page_cards[index]
+                vertical.setValue(vertical.minimum() if first else card.y())
+                viewport = doc.scroll_area.viewport()
+                doc.scroll_area.horizontalScrollBar().setValue(
+                    card.x() + (card.width() - viewport.width()) // 2)
             return
         previous = key in (Qt.Key.Key_Left, Qt.Key.Key_Up, Qt.Key.Key_PageUp)
         if doc.fit_mode:
@@ -487,6 +517,20 @@ class MainWindow(QMainWindow):
         scrollbar.triggerAction(action)
 
     def _build_toolbar(self) -> None:
+        self.next_tab_action = QAction(tr('下一個標籤頁'), self)
+        self.next_tab_action.setShortcuts(QKeySequence.keyBindings(QKeySequence.StandardKey.NextChild))
+        self.next_tab_action.triggered.connect(lambda: self._cycle_tab(1))
+        self.addAction(self.next_tab_action)
+        self.previous_tab_action = QAction(tr('上一個標籤頁'), self)
+        previous_tab_keys = QKeySequence.keyBindings(QKeySequence.StandardKey.PreviousChild)
+        # Qt's Windows standard binding uses Backtab, while native keyboards can
+        # deliver Ctrl+Shift+Tab. Register both representations outside QTabWidget.
+        reverse_tab = QKeySequence('Ctrl+Shift+Tab')
+        if reverse_tab not in previous_tab_keys:
+            previous_tab_keys.append(reverse_tab)
+        self.previous_tab_action.setShortcuts(previous_tab_keys)
+        self.previous_tab_action.triggered.connect(lambda: self._cycle_tab(-1))
+        self.addAction(self.previous_tab_action)
         close_keys = QKeySequence.keyBindings(QKeySequence.StandardKey.Close)
         names = [sequence.toString(QKeySequence.SequenceFormat.NativeText) for sequence in close_keys]
         names = sorted((name for name in names if name and name != "Close"),
@@ -772,6 +816,11 @@ class MainWindow(QMainWindow):
 
     def current_document(self):
         return self.tabs.currentWidget() if hasattr(self, "tabs") else None
+
+    def _cycle_tab(self, step: int) -> None:
+        count = self.tabs.count()
+        if count > 1:
+            self.tabs.setCurrentIndex((self.tabs.currentIndex() + step) % count)
 
     def ordered_documents(self):
         return [self.tabs.widget(i) for i in range(self.tabs.count())]
